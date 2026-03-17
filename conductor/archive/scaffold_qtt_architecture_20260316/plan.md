@@ -9,7 +9,7 @@
     - [x] Create folder structures and `mod.rs` files.
 - [x] Task: Conductor - User Manual Verification 'Phase 1: Entities & Use Cases Scaffolding' (Protocol in workflow.md)
 
-## Phase 2: Adapters & Infrastructure Scaffolding
+## Phase 2: Adapters & Infrastructure Scaffolding [checkpoint: c379bb2]
 - [x] Task: Create `syntax_parser`, `repl_session`, and `diagnostics` adapter modules.
     - [x] Write tests ensuring dependency isolation (Adapters don't leak into Entities).
     - [x] Create folder structures and `mod.rs` files.
