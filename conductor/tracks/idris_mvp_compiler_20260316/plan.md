@@ -12,7 +12,7 @@
     - [x] Implement file loading and hot-reloading logic.
 - [x] Task: Conductor - User Manual Verification 'Phase 1: Foundation & Core REPL' (Protocol in workflow.md)
 
-## Phase 2: QTT & Frontend Elaboration [checkpoint: 79657]
+## Phase 2: QTT & Frontend Elaboration [checkpoint: d38a227]
 - [x] Task: Implement algebraic data types (ADTs) in the QTT checker.
     - [x] Write tests for ADT definition and pattern matching rules.
     - [x] Implement ADT elaboration logic in `qtt_checker`.
@@ -22,16 +22,16 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 2: QTT & Frontend Elaboration' (Protocol in workflow.md)
 
 ## Phase 3: Pure LLVM Backend & Code Generation
-- [ ] Task: Implement code generation for core primitives using pure LLVM IR.
-    - [ ] Write tests for native code generation without C runtime dependencies.
-    - [ ] Implement LLVM IR generation for integers, strings, etc., in `llvm_native`.
-- [ ] Task: Implement zero-GC memory management via QTT in the backend.
-    - [ ] Write tests verifying deterministic memory deallocation in generated code.
-    - [ ] Implement the resource-tracking-to-LLVM-IR lowering.
-- [ ] Task: Implement runtime I/O primitives (e.g., `print`) in pure LLVM/Assembly.
-    - [ ] Write tests for native console output.
-    - [ ] Implement low-level I/O routines.
-- [ ] Task: Conductor - User Manual Verification 'Phase 3: Pure LLVM Backend & Code Generation' (Protocol in workflow.md)
+- [x] Task: Implement code generation for core primitives using pure LLVM IR.
+    - [x] Write tests for native code generation without C runtime dependencies.
+    - [x] Implement LLVM IR generation for integers, strings, etc., in `llvm_native`.
+- [x] Task: Implement zero-GC memory management via QTT in the backend.
+    - [x] Write tests verifying deterministic memory deallocation in generated code.
+    - [x] Implement the resource-tracking-to-LLVM-IR lowering.
+- [x] Task: Implement runtime I/O primitives (e.g., `print`) in pure LLVM/Assembly.
+    - [x] Write tests for native console output.
+    - [x] Implement low-level I/O routines.
+- [x] Task: Conductor - User Manual Verification 'Phase 3: Pure LLVM Backend & Code Generation' (Protocol in workflow.md)
 
 ## Phase 4: Cross-Platform & Verification
 - [ ] Task: Enable WebAssembly (WASM) target support.
