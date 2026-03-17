@@ -33,7 +33,7 @@
     - [x] Implement low-level I/O routines.
 - [x] Task: Conductor - User Manual Verification 'Phase 3: Pure LLVM Backend & Code Generation' (Protocol in workflow.md)
 
-## Phase 4: Cross-Platform & Verification
+## Phase 4: Cross-Platform & Verification [checkpoint: cf18eef]
 - [x] Task: Enable WebAssembly (WASM) target support.
     - [x] Write tests verifying WASM generation and execution.
     - [x] Configure `llvm_native` for WASM emission.
