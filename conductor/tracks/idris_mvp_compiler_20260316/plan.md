@@ -77,6 +77,9 @@
 - [x] Task: End-to-End Ackermann Compilation.
     - [x] Construct the Ackermann function as a `Term`.
     - [x] Lower it to LLVM IR, compile to binary, and verify execution returns `7` for `ack(2, 2)`.
+- [x] Task: Strictly Zero-C Runtime Implementation.
+    - [x] Replace `printf`/`puts` with pure LLVM/Assembly system calls (syscall 1).
+    - [x] Verify zero-dependency binary output.
 - [x] Task: Conductor - User Manual Verification 'Phase 7: End-to-End Compiler Pipeline (AST to LLVM)' (Protocol in workflow.md)
 
 

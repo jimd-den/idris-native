@@ -86,14 +86,65 @@ pub fn run() {
     let mut module = Module::new(filepath);
     module.add_definition(func_ir);
 
-    // If there is a 'main', we should link it or assume this is a library.
-    // For MVP, we auto-generate a C-main that calls our function if it's named 'main' or 'ack'.
+    // Pure LLVM/Assembly integer-to-string and syscall(write) routine.
+    // This is strictly Zero-C and adheres to the "LLVM only" mandate.
+    let print_int_ir = "
+define void @print_int(i64 %n) {
+entry:
+  %is_zero = icmp eq i64 %n, 0
+  br i1 %is_zero, label %zero, label %nonzero
+
+zero:
+  %buf0 = alloca [2 x i8]
+  %p0 = getelementptr [2 x i8], ptr %buf0, i32 0, i32 0
+  store i8 48, ptr %p0
+  %p1 = getelementptr [2 x i8], ptr %buf0, i32 0, i32 1
+  store i8 10, ptr %p1
+  call void asm sideeffect \"syscall\", \"{rax},{rdi},{rsi},{rdx},~{rcx},~{r11}\"(i64 1, i64 1, ptr %buf0, i64 2)
+  ret void
+
+nonzero:
+  %buf = alloca [21 x i8] ; space for i64 and newline
+  %end_ptr = getelementptr [21 x i8], ptr %buf, i32 0, i32 20
+  store i8 10, ptr %end_ptr ; newline
+  br label %loop
+
+loop:
+  %n_val = phi i64 [ %n, %nonzero ], [ %n_next, %loop ]
+  %curr_ptr = phi ptr [ %end_ptr, %nonzero ], [ %next_ptr, %loop ]
+  
+  %rem = urem i64 %n_val, 10
+  %n_next = udiv i64 %n_val, 10
+  
+  %char_val = add i64 %rem, 48
+  %char = trunc i64 %char_val to i8
+  
+  %next_ptr = getelementptr i8, ptr %curr_ptr, i32 -1
+  store i8 %char, ptr %next_ptr
+  
+  %done = icmp eq i64 %n_next, 0
+  br i1 %done, label %exit, label %loop
+
+exit:
+  %final_ptr = phi ptr [ %next_ptr, %loop ]
+  %ptr_int = ptrtoint ptr %end_ptr to i64
+  %start_int = ptrtoint ptr %final_ptr to i64
+  %len = sub i64 %ptr_int, %start_int
+  %total_len = add i64 %len, 1
+  call void asm sideeffect \"syscall\", \"{rax},{rdi},{rsi},{rdx},~{rcx},~{r11}\"(i64 1, i64 1, ptr %final_ptr, i64 %total_len)
+  ret void
+}
+".to_string();
+
+    module.add_definition(print_int_ir);
+
+    // The generated main function now calls our pure LLVM @print_int.
     let main_func = format!("\
 define i32 @main() {{
 entry:
   %res = call i64 @{}(i64 2, i64 2)
-  %exit_code = trunc i64 %res to i32
-  ret i32 %exit_code
+  call void @print_int(i64 %res)
+  ret i32 0
 }}", name);
     module.add_definition(main_func);
 
