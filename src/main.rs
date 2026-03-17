@@ -17,11 +17,23 @@
 //! Extreme performance is realized through Data-Oriented Design, cache-friendly 
 //! memory layouts (SoA), and Arena-based allocation.
 
+// Core Layers (Entities & Use Cases)
 pub mod core_terms;
 pub mod qtt_checker;
 pub mod evaluator;
 pub mod compiler;
 
+// Adapter Layer
+pub mod syntax_parser;
+pub mod repl_session;
+pub mod diagnostics;
+
+// Infrastructure Layer (Frameworks & Drivers)
+pub mod cli_driver;
+pub mod llvm_native;
+
 fn main() {
-    println!("Idris Native: Initializing...");
+    // In accordance with Clean Architecture, we route strictly through 
+    // the CLI driver (Infrastructure) to begin execution.
+    cli_driver::run();
 }

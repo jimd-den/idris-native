@@ -1,6 +1,6 @@
 # Implementation Plan: Scaffold the QTT Screaming Architecture
 
-## Phase 1: Entities & Use Cases Scaffolding
+## Phase 1: Entities & Use Cases Scaffolding [checkpoint: 0b06e41]
 - [x] Task: Create `core_terms` module and establish internal, dependency-free Arena allocator.
     - [x] Write initial unit test verifying arena allocation basics.
     - [x] Implement minimal, zero-GC Arena to pass the tests.
@@ -10,10 +10,10 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 1: Entities & Use Cases Scaffolding' (Protocol in workflow.md)
 
 ## Phase 2: Adapters & Infrastructure Scaffolding
-- [ ] Task: Create `syntax_parser`, `repl_session`, and `diagnostics` adapter modules.
-    - [ ] Write tests ensuring dependency isolation (Adapters don't leak into Entities).
-    - [ ] Create folder structures and `mod.rs` files.
-- [ ] Task: Create `cli_driver` and `llvm_native` framework/driver modules.
-    - [ ] Ensure `main.rs` routes strictly through `cli_driver`.
-    - [ ] Create folder structures.
-- [ ] Task: Conductor - User Manual Verification 'Phase 2: Adapters & Infrastructure Scaffolding' (Protocol in workflow.md)
+- [x] Task: Create `syntax_parser`, `repl_session`, and `diagnostics` adapter modules.
+    - [x] Write tests ensuring dependency isolation (Adapters don't leak into Entities).
+    - [x] Create folder structures and `mod.rs` files.
+- [x] Task: Create `cli_driver` and `llvm_native` framework/driver modules.
+    - [x] Ensure `main.rs` routes strictly through `cli_driver`.
+    - [x] Create folder structures.
+- [x] Task: Conductor - User Manual Verification 'Phase 2: Adapters & Infrastructure Scaffolding' (Protocol in workflow.md)
