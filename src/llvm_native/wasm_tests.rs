@@ -23,11 +23,9 @@ fn test_wasm_print_ir_generation() {
     let mut backend = LlvmBackend::new();
     backend.set_target("wasm32-unknown-unknown");
     
-    let ir = backend.gen_print_ir("WASM Test");
+    let (decl, body) = backend.gen_print_ir("WASM Test");
     
-    // For WASM, we expect a different I/O routine than the standard 'puts'.
-    // We expect it to use a WASM-specific import or a pure LLVM implementation 
-    // that doesn't rely on the C runtime.
-    assert!(ir.contains("declare void @__wasm_print"));
-    assert!(!ir.contains("@puts"));
+    assert!(decl.contains("declare void @__wasm_print"));
+    assert!(body.contains("call void @__wasm_print"));
+    assert!(!decl.contains("@puts"));
 }

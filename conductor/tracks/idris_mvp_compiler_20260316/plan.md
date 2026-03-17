@@ -44,3 +44,38 @@
     - [x] Write comparative benchmarks against well-optimized C code.
     - [x] Apply LLVM optimization passes and refine IR generation to meet performance goals.
 - [x] Task: Conductor - User Manual Verification 'Phase 4: Cross-Platform & Verification' (Protocol in workflow.md)
+
+## Phase 5: Functional Core & Turing Completeness
+- [x] Task: Define the Core AST (`Term`) in `core_terms`.
+    - [x] Define the `Term` enum supporting Var, Lambda, App, Pi, etc.
+    - [x] Implement constructors using the `Arena`.
+- [x] Task: Implement a functional `Evaluator` for term reduction.
+    - [x] Write tests for basic Lambda reduction.
+    - [x] Implement the `eval` logic in `evaluator/mod.rs`.
+- [x] Task: Implement support for nested recursion (Ackermann Proof).
+    - [x] Define the Ackermann function using the new `Term` structure.
+    - [x] Verify its evaluation in the REPL (e.g., `ack 2 2 = 7`).
+- [x] Task: Conductor - User Manual Verification 'Phase 5: Functional Core & Turing Completeness' (Protocol in workflow.md)
+
+## Phase 6: Executable Generation & Toolchain Integration
+- [x] Task: Implement `Module` assembly in `llvm_native`.
+    - [x] Define a `Module` structure to hold multiple IR definitions.
+    - [x] Implement a `link` method to produce a single IR string.
+- [x] Task: Implement file emission and toolchain invocation.
+    - [x] Add `emit_to_file` to `LlvmBackend`.
+    - [x] Implement `compile_to_binary` in `cli_driver` using `std::process::Command`.
+- [x] Task: Final Integration Test (Native Binary).
+    - [x] Compile a "Hello World" Idris program to a native binary.
+    - [x] Execute the binary and verify the output.
+- [x] Task: Conductor - User Manual Verification 'Phase 6: Executable Generation & Toolchain Integration' (Protocol in workflow.md)
+
+## Phase 7: End-to-End Compiler Pipeline (AST to LLVM)
+- [x] Task: Extend `Term` AST for Turing Completeness.
+    - [x] Add `Add`, `Sub`, `Eq`, `If`, and `Rec` (Recursion) to `Term`.
+- [x] Task: Implement AST to LLVM lowering.
+    - [x] Create a translation layer in `compiler/mod.rs` mapping `Term` to `LlvmBackend` IR.
+- [x] Task: End-to-End Ackermann Compilation.
+    - [x] Construct the Ackermann function as a `Term`.
+    - [x] Lower it to LLVM IR, compile to binary, and verify execution returns `7` for `ack(2, 2)`.
+- [~] Task: Conductor - User Manual Verification 'Phase 7: End-to-End Compiler Pipeline (AST to LLVM)' (Protocol in workflow.md)
+

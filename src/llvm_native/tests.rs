@@ -38,8 +38,9 @@ fn test_gen_dealloc_erased_resource() {
 fn test_gen_print_ir() {
     let backend = LlvmBackend::new();
     // We expect the LLVM IR for printing "Hello" to include a low-level routine call.
-    let ir = backend.gen_print_ir("Hello");
-    assert!(ir.contains("declare i32 @puts"));
+    let (decl, body) = backend.gen_print_ir("Hello");
+    assert!(decl.contains("declare i32 @puts"));
+    assert!(body.contains("call i32 @puts"));
 }
 
 #[test]

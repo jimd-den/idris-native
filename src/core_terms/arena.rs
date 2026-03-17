@@ -25,25 +25,27 @@
 /// but it can be optimized with raw pointers or multiple chunks as needed 
 /// to achieve our goal of beating well-optimized C performance.
 pub struct Arena<T> {
-    storage: Vec<T>,
+    storage: Vec<Box<T>>, // Use Box to ensure pointers remain stable
 }
 
 impl<T> Arena<T> {
     /// Creates a new, empty arena.
     pub fn new() -> Self {
         Self {
-            storage: Vec::with_capacity(1024), // Pre-allocate initial chunk
+            storage: Vec::with_capacity(1024),
         }
     }
 
-    /// Allocates a value within the arena and returns a reference to it.
+    /// Allocates a value within the arena and returns a raw pointer to it.
     ///
     /// # Performance
-    /// This is an O(1) operation (amortized) that ensures cache locality 
-    /// by placing terms in contiguous memory.
-    pub fn alloc(&mut self, value: T) -> &mut T {
-        self.storage.push(value);
-        let len = self.storage.len();
-        &mut self.storage[len - 1]
+    /// This is an O(1) operation (amortized). By using Box, we ensure 
+    /// that pointers remain stable even if the storage Vec reallocates.
+    pub fn alloc(&mut self, value: T) -> *mut T {
+        let boxed = Box::new(value);
+        let ptr: *mut T = Box::into_raw(boxed);
+        // Safety: We manage the lifetime via the Arena storage.
+        self.storage.push(unsafe { Box::from_raw(ptr) });
+        ptr
     }
 }

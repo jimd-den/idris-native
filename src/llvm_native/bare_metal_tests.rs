@@ -23,10 +23,9 @@ fn test_bare_metal_print_ir_generation() {
     let mut backend = LlvmBackend::new();
     backend.set_target("arm-none-eabi");
     
-    let ir = backend.gen_print_ir("Bare Metal Test");
+    let (decl, body) = backend.gen_print_ir("Bare Metal Test");
     
-    // For bare-metal, we expect it to use a low-level, implementation-defined 
-    // print routine that doesn't rely on 'puts'.
-    assert!(ir.contains("declare void @__bare_metal_print"));
-    assert!(!ir.contains("@puts"));
+    assert!(decl.contains("declare void @__bare_metal_print"));
+    assert!(body.contains("call void @__bare_metal_print"));
+    assert!(!decl.contains("@puts"));
 }

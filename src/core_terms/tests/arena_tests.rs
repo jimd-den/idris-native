@@ -19,5 +19,7 @@ fn test_arena_allocation() {
     let value_ref = arena.alloc(42);
     
     // The test ensures the value is correctly stored and retrievable.
-    assert_eq!(*value_ref, 42);
+    unsafe {
+        assert_eq!(*value_ref, 42);
+    }
 }
