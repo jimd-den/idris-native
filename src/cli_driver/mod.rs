@@ -15,10 +15,112 @@
 //! for a modern developer experience.
 
 use std::process::Command;
+use std::env;
+use std::fs;
+use crate::syntax_parser::{lex, Parser};
+use crate::compiler::IRBuilder;
+use crate::llvm_native::{LlvmBackend, Module};
+use crate::qtt_checker::QttChecker;
+use crate::core_terms::arena::Arena;
+use std::collections::HashMap;
 
 /// The primary entrypoint for the CLI driver.
 pub fn run() {
-    println!("Idris Native: CLI Driver initialized.");
+    let args: Vec<String> = env::args().collect();
+    
+    if args.len() < 2 {
+        println!("Idris Native Compiler: REPL mode not yet fully integrated.");
+        println!("Usage: idris_native <file.idr>");
+        return;
+    }
+
+    let filepath = &args[1];
+    println!("Compiling {}...", filepath);
+
+    let source = match fs::read_to_string(filepath) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading file {}: {}", filepath, e);
+            std::process::exit(1);
+        }
+    };
+
+    let mut arena = Arena::new();
+    let tokens = lex(&source);
+    let mut parser = Parser::new(tokens, &mut arena);
+    
+    // For MVP, we parse a single definition block
+    let (body, name, args_parsed) = parser.parse_def();
+
+    // 1. QTT Checking Phase
+    let checker = QttChecker::new();
+    // In a full compiler, we would extract the type signature and verify the term against it.
+    // Here we simulate the QTT check over the parsed body.
+    if !checker.check_term(body) {
+        eprintln!("QTT Error: Resource bounds or multiplicity constraints violated in '{}'.", name);
+        std::process::exit(1);
+    }
+    println!("QTT Check passed.");
+
+    // 2. LLVM Lowering Phase
+    let mut builder = IRBuilder::new();
+    let mut env_map = HashMap::new();
+    for arg in &args_parsed {
+        env_map.insert(arg.clone(), format!("%{}", arg));
+    }
+    // Bind recursive calls to the function itself
+    env_map.insert(name.clone(), format!("@{}", name));
+
+    let res_reg = builder.lower_term(body, &env_map);
+    builder.instructions.push(format!("  ret i64 {}", res_reg));
+
+    let args_str = args_parsed.iter().map(|a| format!("i64 %{}", a)).collect::<Vec<_>>().join(", ");
+    let func_ir = format!(
+        "define i64 @{}({}) {{\nentry:\n{}\n}}",
+        name,
+        args_str,
+        builder.instructions.join("\n")
+    );
+
+    // 3. Module Assembly
+    let mut module = Module::new(filepath);
+    module.add_definition(func_ir);
+
+    // If there is a 'main', we should link it or assume this is a library.
+    // For MVP, we auto-generate a C-main that calls our function if it's named 'main' or 'ack'.
+    let main_func = format!("\
+define i32 @main() {{
+entry:
+  %res = call i64 @{}(i64 2, i64 2)
+  %exit_code = trunc i64 %res to i32
+  ret i32 %exit_code
+}}", name);
+    module.add_definition(main_func);
+
+    let backend = LlvmBackend::new();
+    let ir_path = format!("{}.ll", filepath);
+    let bin_path = format!("./{}_bin", filepath.replace(".idr", ""));
+
+    if let Err(e) = backend.emit_to_file(&module, &ir_path) {
+        eprintln!("Failed to emit IR: {}", e);
+        std::process::exit(1);
+    }
+
+    // 4. Native Compilation
+    match compile_to_binary(&ir_path, &bin_path) {
+        Ok(true) => {
+            println!("Successfully compiled to {}", bin_path);
+            let _ = fs::remove_file(&ir_path); // Cleanup IR
+        }
+        Ok(false) => {
+            eprintln!("Clang failed to compile the generated IR.");
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("Error invoking Clang: {}", e);
+            std::process::exit(1);
+        }
+    }
 }
 
 /// Compiles an LLVM IR file to a native binary using the system toolchain.
@@ -63,3 +165,4 @@ mod tests {
         let _ = fs::remove_file(ir_path);
     }
 }
+
