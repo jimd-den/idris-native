@@ -4,7 +4,7 @@
 - **Rust (2024 Edition)**: The project's primary language, chosen for its performance, safety, and excellent toolchain support.
 
 ## Backend & Tooling
-- **LLVM**: Used for generating high-performance native machine code.
+- **LLVM**: Used for generating high-performance native machine code, WebAssembly (WASM), and bare-metal targets.
 - **Cargo**: Rust's build system and package manager.
 
 ## Architecture & Memory Management
