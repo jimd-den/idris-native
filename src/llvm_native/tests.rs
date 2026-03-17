@@ -41,3 +41,10 @@ fn test_gen_print_ir() {
     let ir = backend.gen_print_ir("Hello");
     assert!(ir.contains("declare i32 @puts"));
 }
+
+#[test]
+fn test_set_optimization_level() {
+    let mut backend = LlvmBackend::new();
+    backend.set_opt_level(3);
+    assert_eq!(backend.get_opt_level(), 3);
+}

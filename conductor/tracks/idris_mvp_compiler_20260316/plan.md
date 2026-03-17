@@ -21,7 +21,7 @@
     - [x] Implement type class elaboration logic with QTT multiplicities.
 - [x] Task: Conductor - User Manual Verification 'Phase 2: QTT & Frontend Elaboration' (Protocol in workflow.md)
 
-## Phase 3: Pure LLVM Backend & Code Generation
+## Phase 3: Pure LLVM Backend & Code Generation [checkpoint: b2f679f]
 - [x] Task: Implement code generation for core primitives using pure LLVM IR.
     - [x] Write tests for native code generation without C runtime dependencies.
     - [x] Implement LLVM IR generation for integers, strings, etc., in `llvm_native`.
@@ -34,13 +34,13 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 3: Pure LLVM Backend & Code Generation' (Protocol in workflow.md)
 
 ## Phase 4: Cross-Platform & Verification
-- [ ] Task: Enable WebAssembly (WASM) target support.
-    - [ ] Write tests verifying WASM generation and execution.
-    - [ ] Configure `llvm_native` for WASM emission.
-- [ ] Task: Verify Embedded/No-OS target support.
-    - [ ] Write tests for bare-metal execution (e.g., via QEMU or similar).
-    - [ ] Implement necessary low-level startup routines for no-OS.
-- [ ] Task: Performance Benchmarking & Optimization.
-    - [ ] Write comparative benchmarks against well-optimized C code.
-    - [ ] Apply LLVM optimization passes and refine IR generation to meet performance goals.
-- [ ] Task: Conductor - User Manual Verification 'Phase 4: Cross-Platform & Verification' (Protocol in workflow.md)
+- [x] Task: Enable WebAssembly (WASM) target support.
+    - [x] Write tests verifying WASM generation and execution.
+    - [x] Configure `llvm_native` for WASM emission.
+- [x] Task: Verify Embedded/No-OS target support.
+    - [x] Write tests for bare-metal execution (e.g., via QEMU or similar).
+    - [x] Implement necessary low-level startup routines for no-OS.
+- [x] Task: Performance Benchmarking & Optimization.
+    - [x] Write comparative benchmarks against well-optimized C code.
+    - [x] Apply LLVM optimization passes and refine IR generation to meet performance goals.
+- [x] Task: Conductor - User Manual Verification 'Phase 4: Cross-Platform & Verification' (Protocol in workflow.md)
