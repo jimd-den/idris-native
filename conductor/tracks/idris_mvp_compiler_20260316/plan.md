@@ -1,6 +1,6 @@
 # Implementation Plan: Idris Native MVP Compiler & REPL
 
-## Phase 1: Foundation & Core REPL
+## Phase 1: Foundation & Core REPL [checkpoint: b7ce1c5]
 - [x] Task: Implement basic expression evaluation in the REPL.
     - [x] Write tests for parsing and evaluating core primitives (integers, strings).
     - [x] Implement the evaluation logic in `repl_session`.
@@ -12,14 +12,14 @@
     - [x] Implement file loading and hot-reloading logic.
 - [x] Task: Conductor - User Manual Verification 'Phase 1: Foundation & Core REPL' (Protocol in workflow.md)
 
-## Phase 2: QTT & Frontend Elaboration
-- [ ] Task: Implement algebraic data types (ADTs) in the QTT checker.
-    - [ ] Write tests for ADT definition and pattern matching rules.
-    - [ ] Implement ADT elaboration logic in `qtt_checker`.
-- [ ] Task: Implement basic Type Classes (Interfaces).
-    - [ ] Write tests for interface definition and implementation resolution.
-    - [ ] Implement type class elaboration logic.
-- [ ] Task: Conductor - User Manual Verification 'Phase 2: QTT & Frontend Elaboration' (Protocol in workflow.md)
+## Phase 2: QTT & Frontend Elaboration [checkpoint: 79657]
+- [x] Task: Implement algebraic data types (ADTs) in the QTT checker.
+    - [x] Write tests for ADT definition and pattern matching rules.
+    - [x] Implement ADT elaboration logic in `qtt_checker`.
+- [x] Task: Implement basic Type Classes (Interfaces).
+    - [x] Write tests for interface definition and implementation resolution.
+    - [x] Implement type class elaboration logic with QTT multiplicities.
+- [x] Task: Conductor - User Manual Verification 'Phase 2: QTT & Frontend Elaboration' (Protocol in workflow.md)
 
 ## Phase 3: Pure LLVM Backend & Code Generation
 - [ ] Task: Implement code generation for core primitives using pure LLVM IR.

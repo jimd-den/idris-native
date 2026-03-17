@@ -18,6 +18,7 @@
 //! the physical memory pool for these QTT-checked terms.
 
 pub mod arena;
+pub mod multiplicity;
 
 #[cfg(test)]
 mod tests {
