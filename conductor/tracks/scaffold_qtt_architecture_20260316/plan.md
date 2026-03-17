@@ -1,13 +1,13 @@
 # Implementation Plan: Scaffold the QTT Screaming Architecture
 
 ## Phase 1: Entities & Use Cases Scaffolding
-- [ ] Task: Create `core_terms` module and establish `bumpalo` arena memory types context.
-    - [ ] Write initial unit test verifying arena allocation basics.
-    - [ ] Implement scaffold code to pass the tests.
-- [ ] Task: Create `qtt_checker`, `evaluator`, and `compiler` use-case modules.
-    - [ ] Write basic module linkage tests.
-    - [ ] Create folder structures and `mod.rs` files.
-- [ ] Task: Conductor - User Manual Verification 'Phase 1: Entities & Use Cases Scaffolding' (Protocol in workflow.md)
+- [x] Task: Create `core_terms` module and establish internal, dependency-free Arena allocator.
+    - [x] Write initial unit test verifying arena allocation basics.
+    - [x] Implement minimal, zero-GC Arena to pass the tests.
+- [x] Task: Create `qtt_checker`, `evaluator`, and `compiler` use-case modules.
+    - [x] Write basic module linkage tests.
+    - [x] Create folder structures and `mod.rs` files.
+- [x] Task: Conductor - User Manual Verification 'Phase 1: Entities & Use Cases Scaffolding' (Protocol in workflow.md)
 
 ## Phase 2: Adapters & Infrastructure Scaffolding
 - [ ] Task: Create `syntax_parser`, `repl_session`, and `diagnostics` adapter modules.
