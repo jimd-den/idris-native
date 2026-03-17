@@ -4,7 +4,5 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 ---
 
----
-
-- [~] **Track: create a usable turing complete compiler that is faster than C and flexible to almost all architectures usings red/green refactor tdd, with a workable idris 2 repl that is also faster than c**
-*Link: [./tracks/idris_mvp_compiler_20260316/](./tracks/idris_mvp_compiler_20260316/)*
+## [ ] Track: implement SHA-256 hasher using red/green refactor TDD to test zero-cost abstractions, bitwise primitives, and array structures in the compiler
+*Link: [./tracks/sha256_hasher_20260316/](./tracks/sha256_hasher_20260316/)*
