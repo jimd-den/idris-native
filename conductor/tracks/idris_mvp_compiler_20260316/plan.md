@@ -69,7 +69,7 @@
     - [x] Execute the binary and verify the output.
 - [x] Task: Conductor - User Manual Verification 'Phase 6: Executable Generation & Toolchain Integration' (Protocol in workflow.md)
 
-## Phase 7: End-to-End Compiler Pipeline (AST to LLVM)
+## Phase 7: End-to-End Compiler Pipeline (AST to LLVM) [checkpoint: 8033502]
 - [x] Task: Extend `Term` AST for Turing Completeness.
     - [x] Add `Add`, `Sub`, `Eq`, `If`, and `Rec` (Recursion) to `Term`.
 - [x] Task: Implement AST to LLVM lowering.
@@ -77,5 +77,6 @@
 - [x] Task: End-to-End Ackermann Compilation.
     - [x] Construct the Ackermann function as a `Term`.
     - [x] Lower it to LLVM IR, compile to binary, and verify execution returns `7` for `ack(2, 2)`.
-- [~] Task: Conductor - User Manual Verification 'Phase 7: End-to-End Compiler Pipeline (AST to LLVM)' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 7: End-to-End Compiler Pipeline (AST to LLVM)' (Protocol in workflow.md)
+
 
