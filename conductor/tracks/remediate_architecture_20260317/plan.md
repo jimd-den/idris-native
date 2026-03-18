@@ -27,14 +27,15 @@
     - [ ] Verify build and existing tests pass.
 - [x] **Task: Conductor - User Manual Verification 'Phase 1' (Protocol in workflow.md)**
 
-## Phase 2: Domain Layer Robustification (Red/Green TDD)
+## Phase 2: Domain Layer Robustification (Red/Green TDD) [checkpoint: 8268810]
 - [x] **Task: Robustify `Arena` Allocator (KISS-01 - Revised)**
     - [x] **Red:** Write stress tests for `Arena` with large allocations and boundary conditions in `src/domain/tests/arena_robust_tests.rs`.
     - [x] **Green:** Refactor `Arena::alloc` to ensure safe, robust memory management without simplifying away the raw-pointer control.
-- [~] **Task: Modularize `Term` and `Multiplicity`**
+- [x] **Task: Modularize `Term` and `Multiplicity`**
     - [x] **Red:** Write exhaustive match tests for `Term` variants in `src/domain/tests/term_structure_tests.rs`.
-    - [ ] **Green:** Extract `Term` enum to `src/domain/term.rs` and `Multiplicity` to `src/domain/multiplicity.rs`. Implement Literate Programming comments.
-- [ ] **Task: Conductor - User Manual Verification 'Phase 2' (Protocol in workflow.md)**
+    - [x] **Green:** Extract `Term` enum to `src/domain/term.rs` and `Multiplicity` to `src/domain/multiplicity.rs`. Implement Literate Programming comments.
+- [x] **Task: Conductor - User Manual Verification 'Phase 2' (Protocol in workflow.md)**
+
 
 ## Phase 3: Common Utilities & Literate Foundation
 - [ ] **Task: Implement `common/cursor.rs` (DRY-03)**
