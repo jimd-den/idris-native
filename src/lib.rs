@@ -7,3 +7,9 @@ pub mod application;
 pub mod adapters;
 pub mod drivers;
 pub mod infrastructure;
+pub mod common;
+
+#[macro_use]
+pub mod macros {
+    pub use crate::common::logging::LogSpan;
+}
