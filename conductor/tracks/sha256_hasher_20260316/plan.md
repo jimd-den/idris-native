@@ -6,11 +6,12 @@
 - [x] Task: TDD Red/Green - Implement lowering for the new types and operators in `IRBuilder`. Write tests verifying bitwise operations lower to correct LLVM IR and execute correctly.
 - [x] Task: Conductor - User Manual Verification 'Phase 1: Bitwise Primitives and Word Types' (Protocol in workflow.md)
 
-## Phase 2: Array/Buffer Primitives
+## Phase 2: Array/Buffer Primitives [checkpoint: 772600a]
 - [x] Task: TDD Red/Green - Add a fixed-size `Buffer` primitive to `Term` AST alongside `BufferLoad` and `BufferStore`. Write failing structural tests.
 - [x] Task: TDD Red/Green - Enforce QTT bounds on buffers in `QttChecker` to prevent memory leaks or use-after-free. Write failing boundary tests first.
 - [x] Task: TDD Red/Green - Implement lowering of buffer operations to LLVM `alloca`, `getelementptr`, `load`, and `store` instructions. Verify with native execution tests.
-- [ ] Task: Conductor - User Manual Verification 'Phase 2: Array/Buffer Primitives' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 2: Array/Buffer Primitives' (Protocol in workflow.md)
+
 
 ## Phase 3: SHA-256 Idris Implementation
 - [ ] Task: TDD Red/Green - Write `sha256.idr` incrementally. Test individual block hashing operations and verify state updates via integration tests.
