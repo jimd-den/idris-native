@@ -37,17 +37,17 @@
 - [x] **Task: Conductor - User Manual Verification 'Phase 2' (Protocol in workflow.md)**
 
 
-## Phase 3: Common Utilities & Literate Foundation
+## Phase 3: Common Utilities & Literate Foundation [checkpoint: a2e3bb2]
 - [x] **Task: Implement `common/cursor.rs` (DRY-03)**
     - [x] **Red:** Write tests for generic `Cursor<T>` in `src/common/tests/cursor_tests.rs`.
     - [x] **Green:** Implement small, composable functions for `advance`, `peek`, `match` in `src/common/cursor.rs`.
 - [x] **Task: Implement `common/logging.rs` (DRY-04)**
     - [x] **Red:** Write tests for `trace_span!` macro in `src/common/tests/logging_tests.rs`.
     - [x] **Green:** Implement `trace_span!` macro and RAII guard for deterministic entry/exit logging.
-- [~] **Task: Implement `common/test_helpers.rs` (DRY-05)**
-    - [ ] **Red:** Create failing test requiring boiler-plate-free `arena_alloc` in `src/common/tests/helper_tests.rs`.
-    - [ ] **Green:** Implement `arena_alloc()` helper.
-- [ ] **Task: Conductor - User Manual Verification 'Phase 3' (Protocol in workflow.md)**
+- [x] **Task: Implement `common/test_helpers.rs` (DRY-05)**
+    - [x] **Red:** Create failing test requiring boiler-plate-free `arena_alloc` in `src/common/tests/helper_tests.rs`.
+    - [x] **Green:** Implement `arena_alloc()` helper.
+- [x] **Task: Conductor - User Manual Verification 'Phase 3' (Protocol in workflow.md)**
 
 ## Phase 4: Application Layer Refinement (Red/Green TDD)
 - [ ] **Task: Refactor `QttChecker` Usage Logic (KISS-05, DRY-01, DRY-02)**
