@@ -1,10 +1,10 @@
 # Implementation Plan: SHA-256 Hasher (Red/Green TDD)
 
-## Phase 1: Bitwise Primitives and Word Types
+## Phase 1: Bitwise Primitives and Word Types [checkpoint: 0ff855f]
 - [x] Task: TDD Red/Green - Extend `Term` AST with Word Types (`i32`, `i8`) and Bitwise Operators (`Xor`, `And`, `Or`, `Not`, `ShiftLeft`, `ShiftRight`). Write failing tests first.
 - [x] Task: TDD Red/Green - Update the Parser to handle the new syntax and operators. Test with malformed and correct syntax strings.
 - [x] Task: TDD Red/Green - Implement lowering for the new types and operators in `IRBuilder`. Write tests verifying bitwise operations lower to correct LLVM IR and execute correctly.
-- [ ] Task: Conductor - User Manual Verification 'Phase 1: Bitwise Primitives and Word Types' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 1: Bitwise Primitives and Word Types' (Protocol in workflow.md)
 
 ## Phase 2: Array/Buffer Primitives
 - [ ] Task: TDD Red/Green - Add a fixed-size `Buffer` primitive to `Term` AST alongside `BufferLoad` and `BufferStore`. Write failing structural tests.
