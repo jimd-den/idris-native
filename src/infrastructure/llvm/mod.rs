@@ -35,7 +35,7 @@ impl LlvmBackend {
 
     /// KISS-03: Multi-line raw string literal for boilerplate IR.
     fn get_print_int_ir(&self) -> String {
-        r#""
+        r#"
 define void @print_int(i64 %n) {
 entry:
   %is_zero = icmp eq i64 %n, 0
@@ -70,7 +70,8 @@ convert:
   %start = ptrtoint i8* %res_ptr to i64
   %msg_len = sub i64 %len, %start
   %final_len = add i64 %msg_len, 1
-  %void_final = call i32 @write(i32 1, i8* %res_ptr, i32 %final_len)
+  %len_i32 = trunc i64 %final_len to i32
+  %void_final = call i32 @write(i32 1, i8* %res_ptr, i32 %len_i32)
   ret void
 }
 

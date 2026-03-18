@@ -76,10 +76,10 @@
 
 
 ## Phase 6: Drivers & Final Integration (CA-02, D-01)
-- [ ] **Task: Decouple `CliDriver`**
-    - [ ] **Red:** Write tests for `CliDriver` using a Mock backend in `src/drivers/cli_driver/tests/mock_tests.rs`.
-    - [ ] **Green:** Refactor `CliDriver` to accept a trait object. Update `main.rs` as the composition root.
-- [ ] **Task: Final Literate Cleanup & Hypothesis Removal (KISS-06)**
-    - [ ] Remove hypothesis tests. Add comprehensive Literate Programming comments to all files.
-    - [ ] Final end-to-end integration test (`ackermann`, `sha256`).
-- [ ] **Task: Conductor - User Manual Verification 'Phase 6' (Protocol in workflow.md)**
+- [x] **Task: Decouple `CliDriver`**
+    - [x] **Red:** Write tests for `CliDriver` using a Mock backend in `src/drivers/cli_driver/tests/mock_tests.rs`.
+    - [x] **Green:** Refactor `CliDriver` to accept a trait object. Update `main.rs` as the composition root.
+- [x] **Task: Final Literate Cleanup & Hypothesis Removal (KISS-06)**
+    - [x] Remove hypothesis tests. Add comprehensive Literate Programming comments to all files.
+    - [x] Final end-to-end integration test (`ackermann`, `sha256`).
+- [x] **Task: Conductor - User Manual Verification 'Phase 6' (Protocol in workflow.md)**

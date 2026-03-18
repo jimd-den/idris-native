@@ -7,7 +7,7 @@
 //! # Strategic Architecture
 //! As a Framework/Driver, the `drivers::cli_driver` is responsible for parsing 
 //! command-line arguments and routing requests to the `compiler` 
-//! Use Case. Sit sits at the outermost layer of our Clean Architecture.
+//! Use Case. It sits at the outermost layer of our Clean Architecture.
 //!
 //! # User Experience
 //! In accordance with our Product Guidelines, the CLI driver should 
@@ -15,16 +15,17 @@
 //! for a modern developer experience.
 
 use std::env;
-use crate::application::compiler::Compiler;
-use crate::infrastructure::llvm::LlvmBackend;
+use crate::application::compiler::{Compiler, Backend};
 use crate::adapters::diagnostics;
 
 /// The primary entrypoint for the CLI driver.
 /// 
-/// Why this exists:
-/// Thin Infrastructure layer. This function only parses arguments and 
-/// delegates all application logic to the `Compiler` Use Case.
-pub fn run() {
+/// # Dependency Injection (CA-02, D-01)
+/// This function now receives its `Backend` implementation as an argument, 
+/// typically from the composition root (`main.rs`). This allows us to 
+/// easily swap the production LLVM backend for a mock or alternative 
+/// backend during testing or cross-compilation.
+pub fn run(backend: &dyn Backend) {
     diagnostics::log("CLI_DRIVER", "ENTER run()");
     let args: Vec<String> = env::args().collect();
     
@@ -37,9 +38,8 @@ pub fn run() {
 
     let filepath = &args[1];
     
-    // Dependency Injection: Inject the LLVM Infrastructure into the Compiler Use Case.
-    let backend = LlvmBackend::new();
-    let compiler = Compiler::new(&backend);
+    // Use the injected backend
+    let compiler = Compiler::new(backend);
 
     match compiler.compile_file(filepath) {
         Ok(bin_path) => {
@@ -52,4 +52,9 @@ pub fn run() {
             std::process::exit(1);
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    pub mod mock_tests;
 }

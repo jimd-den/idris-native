@@ -22,5 +22,4 @@ pub fn lex(input: &str) -> Vec<Token> {
 #[cfg(test)]
 mod tests {
     pub mod sha256_syntax_tests;
-    pub mod hypothesis_tests;
 }
