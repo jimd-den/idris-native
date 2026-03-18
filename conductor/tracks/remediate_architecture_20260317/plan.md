@@ -1,6 +1,6 @@
 # Implementation Plan: Architecture Remediation (v2 - Granular TDD)
 
-## Phase 1: Structural Reorganization (In-place Migration)
+## Phase 1: Structural Reorganization (In-place Migration) [checkpoint: dfbf738]
 - [x] **Task: Restructure `domain/` layer**
     - [ ] Create `src/domain/` directory.
     - [ ] Move `src/core_terms/*` to `src/domain/`.
