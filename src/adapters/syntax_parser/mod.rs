@@ -12,9 +12,10 @@ pub mod parser;
 
 pub use scanner::{Scanner, Token};
 pub use parser::Parser;
+use crate::common::errors::{CompilerError, Spanned};
 
 /// Higher-level lex helper for backward compatibility and simplicity.
-pub fn lex(input: &str) -> Vec<Token> {
+pub fn lex(input: &str) -> Result<Vec<Spanned<Token>>, CompilerError> {
     let mut scanner = Scanner::new(input);
     scanner.scan_tokens()
 }
@@ -22,4 +23,5 @@ pub fn lex(input: &str) -> Vec<Token> {
 #[cfg(test)]
 mod tests {
     pub mod sha256_syntax_tests;
+    pub mod error_tests;
 }

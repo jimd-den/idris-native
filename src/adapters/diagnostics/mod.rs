@@ -7,19 +7,50 @@
 //! `diagnostics` is an Adapter responsible for formatting internal 
 //! domain errors for human consumption, ensuring a consistent and 
 //! helpful developer experience.
-//!
-//! # Communication Guidelines
-//! In accordance with our Product Guidelines, diagnostics must be 
-//! Idris-compatible and provide clear, context-aware instructions 
-//! for resolving errors.
 
-/// Logs a message with an ISO 8601 timestamp for telemetry.
-/// 
-/// Why this exists:
-/// Our core mandate requires high observability. Every major 
-/// component uses this to track execution flow and performance.
+use crate::common::errors::{CompilerError, Span};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Logs a message with a timestamp for telemetry.
 pub fn log(tag: &str, message: &str) {
-    // For MVP, we use a mock timestamp to avoid external dependencies.
-    // In a full implementation, we would use 'chrono'.
-    println!("[2026-03-17T10:00:00Z] {}: {}", tag, message);
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    
+    // We use a simple seconds-since-epoch for now to avoid external dependencies like chrono.
+    println!("[{}] {}: {}", now, tag, message);
+}
+
+/// Renders a compiler error in a detailed Idris 2 style with carets and hints.
+pub fn report_error(error: &CompilerError, source: &str, filename: &str) {
+    match error {
+        CompilerError::Lex(e) => render_snippet(filename, source, e.span, &e.message, None),
+        CompilerError::Parse(e) => render_snippet(filename, source, e.span, &e.message, e.expected.as_deref()),
+        CompilerError::Qtt(e) => {
+            let message = format!(
+                "Variable '{}' declared {:?} but used {} times",
+                e.variable, e.declared, e.actual
+            );
+            render_snippet(filename, source, e.span, &message, e.hint.as_deref());
+        }
+    }
+}
+
+fn render_snippet(filename: &str, source: &str, span: Span, message: &str, hint: Option<&str>) {
+    println!("Error: {}", message);
+    println!("  --> {}:{}:{}", filename, span.line, span.col);
+    
+    let lines: Vec<&str> = source.lines().collect();
+    if let Some(line_text) = lines.get(span.line.saturating_sub(1)) {
+        println!("{:>4} | {}", span.line, line_text);
+        let padding = " ".repeat(span.col.saturating_sub(1));
+        let carets = "^".repeat(span.len.max(1));
+        println!("     | {}{}", padding, carets);
+    }
+    
+    if let Some(h) = hint {
+        println!("     | Hint: {}", h);
+    }
+    println!();
 }

@@ -14,6 +14,6 @@ fn test_compiler_compile_str() {
     // A simple linear usage example that should pass.
     let source = "id : Integer -> Integer\nid x = x";
     
-    let result = compiler.compile_str(source, "test_output");
+    let result = compiler.compile_str(source, "test_output", "test.idr");
     assert!(result.is_ok());
 }

@@ -9,5 +9,5 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 ---
 
-- [ ] **Track: Full Idris 2 Language & Non-QTT Mode**
+- [~] **Track: Full Idris 2 Language & Non-QTT Mode**
 *Link: [./tracks/stubs_and_qtt_20260317/](./tracks/stubs_and_qtt_20260317/)*

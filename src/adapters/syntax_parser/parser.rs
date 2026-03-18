@@ -6,23 +6,19 @@
 //! As an Adapter, the `Parser` translates a stream of `Token`s into our 
 //! internal `Term` (Entities). It encapsulates the syntax rules and 
 //! ensures that the resulting AST is structurally sound.
-//!
-//! # Performance & Memory
-//! By using the `Arena` for all term allocations, we ensure that the AST 
-//! is stored contiguously in memory, maximizing cache hits during 
-//! subsequent traversal and lowering.
 
 use crate::domain::{Term, arena::Arena};
 use crate::adapters::syntax_parser::scanner::Token;
 use crate::common::cursor::Cursor;
+use crate::common::errors::{CompilerError, ParseError, Span, Spanned};
 
 pub struct Parser<'a, 'arena> {
-    cursor: Cursor<Token>,
+    cursor: Cursor<Spanned<Token>>,
     arena: &'arena mut Arena<Term<'a>>,
 }
 
 impl<'a, 'arena> Parser<'a, 'arena> {
-    pub fn new(tokens: Vec<Token>, arena: &'arena mut Arena<Term<'a>>) -> Self {
+    pub fn new(tokens: Vec<Spanned<Token>>, arena: &'arena mut Arena<Term<'a>>) -> Self {
         Self {
             cursor: Cursor::new(tokens),
             arena,
@@ -30,60 +26,79 @@ impl<'a, 'arena> Parser<'a, 'arena> {
     }
 
     pub fn peek(&self) -> &Token {
-        self.cursor.peek().unwrap_or(&Token::EOF)
-    }
-
-    fn advance(&mut self) -> Token {
-        self.cursor.advance().cloned().unwrap_or(Token::EOF)
-    }
-
-    fn consume(&mut self, token: Token, message: &str) -> Token {
-        if self.cursor.check(&token) { 
-            return self.advance(); 
+        match self.cursor.peek() {
+            Some(s) => &s.node,
+            None => &Token::EOF,
         }
-        panic!("{}: Expected {:?}, got {:?}", message, token, self.peek());
+    }
+
+    fn peek_span(&self) -> Span {
+        match self.cursor.peek() {
+            Some(s) => s.span,
+            None => Span::new(0, 0, 0),
+        }
+    }
+
+    fn advance(&mut self) -> Spanned<Token> {
+        self.cursor.advance().cloned().unwrap_or_else(|| {
+            Spanned::new(Token::EOF, Span::new(0, 0, 0))
+        })
+    }
+
+    fn consume(&mut self, token: Token, message: &str) -> Result<Spanned<Token>, CompilerError> {
+        if self.peek() == &token { 
+            return Ok(self.advance()); 
+        }
+        Err(CompilerError::Parse(ParseError {
+            span: self.peek_span(),
+            token: self.peek().clone(),
+            expected: Some(format!("{:?}", token)),
+            message: message.to_string(),
+        }))
     }
 
     /// Entry point for parsing a full program (signature + definition).
-    pub fn parse_program(&mut self) -> (String, &'a Term<'a>, &'a Term<'a>, Vec<String>) {
+    pub fn parse_program(&mut self) -> Result<(String, &'a Term<'a>, &'a Term<'a>, Vec<String>), CompilerError> {
         let _span = crate::trace_span!("PARSER", "parse_program");
         
-        let (name_sig, sig) = self.parse_signature();
-        let (body, name_def, args) = self.parse_def();
+        let (name_sig, sig) = self.parse_signature()?;
+        let (body, name_def, args) = self.parse_def()?;
         
         if name_sig != name_def {
-            panic!("Name mismatch: {} vs {}", name_sig, name_def);
+            return Err(CompilerError::Parse(ParseError {
+                span: self.peek_span(), // Should ideally be span of name_def
+                token: Token::Identifier(name_def.clone()),
+                expected: Some(name_sig.clone()),
+                message: format!("Name mismatch: {} vs {}", name_sig, name_def),
+            }));
         }
         
-        (name_sig, sig, body, args)
+        Ok((name_sig, sig, body, args))
     }
 
-    pub fn parse_signature(&mut self) -> (String, &'a Term<'a>) {
-        let name = match self.advance() {
+    pub fn parse_signature(&mut self) -> Result<(String, &'a Term<'a>), CompilerError> {
+        let name_token = self.advance();
+        let name = match name_token.node {
             Token::Identifier(n) => n,
-            t => panic!("Expected identifier in signature, got {:?}", t),
+            t => return Err(CompilerError::Parse(ParseError {
+                span: name_token.span,
+                token: t,
+                expected: Some("Identifier".to_string()),
+                message: "Expected identifier in signature".to_string(),
+            })),
         };
-        self.consume(Token::Colon, "Expected : after name in signature");
-        let sig = self.parse_pi();
-        (name, sig)
+        self.consume(Token::Colon, "Expected : after name in signature")?;
+        let sig = self.parse_pi()?;
+        Ok((name, sig))
     }
 
-    fn parse_pi(&mut self) -> &'a Term<'a> {
-        let mut lhs = if self.cursor.check(&Token::LParen) {
+    fn parse_pi(&mut self) -> Result<&'a Term<'a>, CompilerError> {
+        let mut lhs = if self.peek() == &Token::LParen {
             let mut is_multiplicity = false;
-            let mut name_opt: Option<String> = None;
             
             // Check if it's (q x : type)
-            if let Some(Token::Integer(q)) = self.cursor.peek_next() {
+            if let Some(Spanned { node: Token::Integer(q), .. }) = self.cursor.peek_next() {
                 if *q == 0 || *q == 1 {
-                    // We need a way to look ahead further. 
-                    // For now we'll do a hacky check.
-                    // ( q identifier :
-                    // Since we can't look ahead 3 steps easily, let's just 
-                    // try to parse it and backtrack if it fails? 
-                    // Our Cursor doesn't support backtracking yet.
-                    
-                    // MVP simplification: 
                     is_multiplicity = true;
                 }
             }
@@ -91,213 +106,259 @@ impl<'a, 'arena> Parser<'a, 'arena> {
             if is_multiplicity {
                 self.advance(); // (
                 let _q = self.advance(); // quantity
-                let name = match self.advance() {
+                let name_token = self.advance();
+                let name = match name_token.node {
                     Token::Identifier(n) => n,
-                    _ => panic!("Expected identifier in Pi"),
+                    t => return Err(CompilerError::Parse(ParseError {
+                        span: name_token.span,
+                        token: t,
+                        expected: Some("Identifier".to_string()),
+                        message: "Expected identifier in Pi".to_string(),
+                    })),
                 };
-                self.consume(Token::Colon, "Expected : in Pi binder");
-                let ty = self.parse_expr();
-                self.consume(Token::RParen, "Expected ) in Pi binder");
-                if self.cursor.match_item(&Token::Arrow) {
-                    let body = self.parse_pi();
-                    return unsafe { &*self.arena.alloc(Term::Pi(name, ty, body)) };
+                self.consume(Token::Colon, "Expected : in Pi binder")?;
+                let ty = self.parse_expr()?;
+                self.consume(Token::RParen, "Expected ) in Pi binder")?;
+                if self.peek() == &Token::Arrow {
+                    self.advance();
+                    let body = self.parse_pi()?;
+                    return Ok(unsafe { &*self.arena.alloc(Term::Pi(name, ty, body)) });
                 }
                 ty
             } else {
-                // Not a multiplicity binder, just (expr)
                 self.advance(); // (
-                let expr = self.parse_expr();
-                self.consume(Token::RParen, "Expected )");
+                let expr = self.parse_expr()?;
+                self.consume(Token::RParen, "Expected )")?;
                 expr
             }
         } else {
-            self.parse_primary()
+            self.parse_primary()?
         };
 
-        if self.cursor.match_item(&Token::Arrow) {
-            let rhs = self.parse_pi();
+        if self.peek() == &Token::Arrow {
+            self.advance();
+            let rhs = self.parse_pi()?;
             lhs = unsafe { &*self.arena.alloc(Term::Pi("_".to_string(), lhs, rhs)) };
         }
-        lhs
+        Ok(lhs)
     }
 
-    pub fn parse_def(&mut self) -> (&'a Term<'a>, String, Vec<String>) {
-        let name = match self.advance() {
+    pub fn parse_def(&mut self) -> Result<(&'a Term<'a>, String, Vec<String>), CompilerError> {
+        let name_token = self.advance();
+        let name = match name_token.node {
             Token::Identifier(n) => n,
-            t => panic!("Expected identifier in definition, got {:?}", t),
+            t => return Err(CompilerError::Parse(ParseError {
+                span: name_token.span,
+                token: t,
+                expected: Some("Identifier".to_string()),
+                message: "Expected identifier in definition".to_string(),
+            })),
         };
         let mut args = Vec::new();
-        while !self.cursor.check(&Token::Assign) && !self.cursor.is_at_end() {
-            match self.advance() {
+        while self.peek() != &Token::Assign && self.peek() != &Token::EOF {
+            let arg_token = self.advance();
+            match arg_token.node {
                 Token::Identifier(arg) => args.push(arg),
-                t => panic!("Expected argument name, got {:?}", t),
+                t => return Err(CompilerError::Parse(ParseError {
+                    span: arg_token.span,
+                    token: t,
+                    expected: Some("Identifier (argument name)".to_string()),
+                    message: "Expected argument name".to_string(),
+                })),
             }
         }
-        self.consume(Token::Assign, "Expected = in definition");
-        let body = self.parse_expr();
-        (body, name, args)
+        self.consume(Token::Assign, "Expected = in definition")?;
+        let body = self.parse_expr()?;
+        Ok((body, name, args))
     }
 
-    fn parse_expr(&mut self) -> &'a Term<'a> {
+    fn parse_expr(&mut self) -> Result<&'a Term<'a>, CompilerError> {
         match self.peek() {
             Token::If => {
                 self.advance();
-                let cond = self.parse_expr();
-                self.consume(Token::Then, "Expected then");
-                let then_br = self.parse_expr();
-                self.consume(Token::Else, "Expected else");
-                let else_br = self.parse_expr();
-                unsafe { &*self.arena.alloc(Term::If(cond, then_br, else_br)) }
+                let cond = self.parse_expr()?;
+                self.consume(Token::Then, "Expected then")?;
+                let then_br = self.parse_expr()?;
+                self.consume(Token::Else, "Expected else")?;
+                let else_br = self.parse_expr()?;
+                Ok(unsafe { &*self.arena.alloc(Term::If(cond, then_br, else_br)) })
             }
             Token::Let => {
                 self.advance();
-                let name = match self.advance() {
+                let name_token = self.advance();
+                let name = match name_token.node {
                     Token::Identifier(n) => n,
-                    _ => panic!("Expected identifier in let"),
+                    t => return Err(CompilerError::Parse(ParseError {
+                        span: name_token.span,
+                        token: t,
+                        expected: Some("Identifier".to_string()),
+                        message: "Expected identifier in let".to_string(),
+                    })),
                 };
-                self.consume(Token::Assign, "Expected = in let");
-                let val = self.parse_expr();
-                self.consume(Token::In, "Expected in in let");
-                let body = self.parse_expr();
-                unsafe { &*self.arena.alloc(Term::Let(name, val, body)) }
+                self.consume(Token::Assign, "Expected = in let")?;
+                let val = self.parse_expr()?;
+                self.consume(Token::In, "Expected in in let")?;
+                let body = self.parse_expr()?;
+                Ok(unsafe { &*self.arena.alloc(Term::Let(name, val, body)) })
             }
             Token::Case => {
                 self.advance();
-                let target = self.parse_expr();
-                self.consume(Token::Of, "Expected of in case");
+                let target = self.parse_expr()?;
+                self.consume(Token::Of, "Expected of in case")?;
                 let mut branches = Vec::new();
-                while !self.cursor.is_at_end() {
-                    let pat_name = match self.advance() {
+                while self.peek() != &Token::EOF {
+                    let pat_token = self.advance();
+                    let pat_name = match pat_token.node {
                         Token::Identifier(n) => n,
                         Token::Integer(i) => i.to_string(),
-                        _ => panic!("Expected pattern"),
+                        t => return Err(CompilerError::Parse(ParseError {
+                            span: pat_token.span,
+                            token: t,
+                            expected: Some("Pattern (Identifier or Integer)".to_string()),
+                            message: "Expected pattern".to_string(),
+                        })),
                     };
                     let mut pat_args = Vec::new();
-                    while !self.cursor.check(&Token::FatArrow) {
-                        match self.advance() {
+                    while self.peek() != &Token::FatArrow {
+                        let arg_token = self.advance();
+                        match arg_token.node {
                             Token::Identifier(a) => pat_args.push(a),
-                            _ => panic!("Expected pattern argument"),
+                            t => return Err(CompilerError::Parse(ParseError {
+                                span: arg_token.span,
+                                token: t,
+                                expected: Some("FatArrow (=>) or argument identifier".to_string()),
+                                message: "Expected pattern argument".to_string(),
+                            })),
                         }
                     }
-                    self.consume(Token::FatArrow, "Expected =>");
-                    let body = self.parse_expr();
+                    self.consume(Token::FatArrow, "Expected =>")?;
+                    let body = self.parse_expr()?;
                     branches.push((pat_name, pat_args, body));
-                    if !self.cursor.match_item(&Token::Pipe) { break; }
+                    if self.peek() != &Token::Pipe { break; }
+                    self.advance(); // |
                 }
-                unsafe { &*self.arena.alloc(Term::Case(target, branches)) }
+                Ok(unsafe { &*self.arena.alloc(Term::Case(target, branches)) })
             }
             _ => self.parse_comparison(),
         }
     }
 
-    fn parse_comparison(&mut self) -> &'a Term<'a> {
-        let mut lhs = self.parse_bitwise_or();
-        while self.cursor.match_item(&Token::Eq) {
-            let rhs = self.parse_bitwise_or();
+    fn parse_comparison(&mut self) -> Result<&'a Term<'a>, CompilerError> {
+        let mut lhs = self.parse_bitwise_or()?;
+        while self.peek() == &Token::Eq {
+            self.advance();
+            let rhs = self.parse_bitwise_or()?;
             lhs = unsafe { &*self.arena.alloc(Term::Eq(lhs, rhs)) };
         }
-        lhs
+        Ok(lhs)
     }
 
-    fn parse_bitwise_or(&mut self) -> &'a Term<'a> {
-        let mut lhs = self.parse_bitwise_xor();
-        while self.cursor.match_item(&Token::BitOr) {
-            let rhs = self.parse_bitwise_xor();
+    fn parse_bitwise_or(&mut self) -> Result<&'a Term<'a>, CompilerError> {
+        let mut lhs = self.parse_bitwise_xor()?;
+        while self.peek() == &Token::BitOr {
+            self.advance();
+            let rhs = self.parse_bitwise_xor()?;
             lhs = unsafe { &*self.arena.alloc(Term::BitOr(lhs, rhs)) };
         }
-        lhs
+        Ok(lhs)
     }
 
-    fn parse_bitwise_xor(&mut self) -> &'a Term<'a> {
-        let mut lhs = self.parse_bitwise_and();
-        while self.cursor.check(&Token::Backtick) {
-            if self.cursor.peek_next() == Some(&Token::Xor) {
+    fn parse_bitwise_xor(&mut self) -> Result<&'a Term<'a>, CompilerError> {
+        let mut lhs = self.parse_bitwise_and()?;
+        while self.peek() == &Token::Backtick {
+            if let Some(Spanned { node: Token::Xor, .. }) = self.cursor.peek_next() {
                 self.advance(); // `
                 self.advance(); // xor
-                self.consume(Token::Backtick, "Expected ` after xor");
-                let rhs = self.parse_bitwise_and();
+                self.consume(Token::Backtick, "Expected ` after xor")?;
+                let rhs = self.parse_bitwise_and()?;
                 lhs = unsafe { &*self.arena.alloc(Term::BitXor(lhs, rhs)) };
             } else {
                 break;
             }
         }
-        lhs
+        Ok(lhs)
     }
 
-    fn parse_bitwise_and(&mut self) -> &'a Term<'a> {
-        let mut lhs = self.parse_shift();
-        while self.cursor.match_item(&Token::BitAnd) {
-            let rhs = self.parse_shift();
+    fn parse_bitwise_and(&mut self) -> Result<&'a Term<'a>, CompilerError> {
+        let mut lhs = self.parse_shift()?;
+        while self.peek() == &Token::BitAnd {
+            self.advance();
+            let rhs = self.parse_shift()?;
             lhs = unsafe { &*self.arena.alloc(Term::BitAnd(lhs, rhs)) };
         }
-        lhs
+        Ok(lhs)
     }
 
-    fn parse_shift(&mut self) -> &'a Term<'a> {
-        let mut lhs = self.parse_arithmetic();
-        while self.cursor.check(&Token::Backtick) {
-            let op = self.cursor.peek_next();
-            if matches!(op, Some(Token::ShiftL) | Some(Token::ShiftR)) {
-                self.advance(); // `
-                let t = self.advance();
-                self.consume(Token::Backtick, "Expected `");
-                let rhs = self.parse_arithmetic();
-                let term = if t == Token::ShiftL { Term::Shl(lhs, rhs) } else { Term::Shr(lhs, rhs) };
-                lhs = unsafe { &*self.arena.alloc(term) };
-            } else {
-                break;
+    fn parse_shift(&mut self) -> Result<&'a Term<'a>, CompilerError> {
+        let mut lhs = self.parse_arithmetic()?;
+        while self.peek() == &Token::Backtick {
+            if let Some(Spanned { node: op, .. }) = self.cursor.peek_next() {
+                if matches!(op, Token::ShiftL | Token::ShiftR) {
+                    self.advance(); // `
+                    let t = self.advance();
+                    self.consume(Token::Backtick, "Expected `")?;
+                    let rhs = self.parse_arithmetic()?;
+                    let term = if t.node == Token::ShiftL { Term::Shl(lhs, rhs) } else { Term::Shr(lhs, rhs) };
+                    lhs = unsafe { &*self.arena.alloc(term) };
+                    continue;
+                }
             }
+            break;
         }
-        lhs
+        Ok(lhs)
     }
 
-    fn parse_arithmetic(&mut self) -> &'a Term<'a> {
-        let mut lhs = self.parse_unary();
+    fn parse_arithmetic(&mut self) -> Result<&'a Term<'a>, CompilerError> {
+        let mut lhs = self.parse_unary()?;
         loop {
-            if self.cursor.match_item(&Token::Plus) {
-                let rhs = self.parse_unary();
+            if self.peek() == &Token::Plus {
+                self.advance();
+                let rhs = self.parse_unary()?;
                 lhs = unsafe { &*self.arena.alloc(Term::Add(lhs, rhs)) };
-            } else if self.cursor.match_item(&Token::Minus) {
-                let rhs = self.parse_unary();
+            } else if self.peek() == &Token::Minus {
+                self.advance();
+                let rhs = self.parse_unary()?;
                 lhs = unsafe { &*self.arena.alloc(Term::Sub(lhs, rhs)) };
             } else {
                 break;
             }
         }
-        lhs
+        Ok(lhs)
     }
 
-    fn parse_unary(&mut self) -> &'a Term<'a> {
-        if self.cursor.match_item(&Token::Complement) {
-            let body = self.parse_unary();
-            return unsafe { &*self.arena.alloc(Term::BitNot(body)) };
+    fn parse_unary(&mut self) -> Result<&'a Term<'a>, CompilerError> {
+        if self.peek() == &Token::Complement {
+            self.advance();
+            let body = self.parse_unary()?;
+            return Ok(unsafe { &*self.arena.alloc(Term::BitNot(body)) });
         }
         self.parse_app()
     }
 
-    fn parse_app(&mut self) -> &'a Term<'a> {
-        let mut expr = self.parse_primary();
-        while !self.cursor.is_at_end() {
+    fn parse_app(&mut self) -> Result<&'a Term<'a>, CompilerError> {
+        let mut expr = self.parse_primary()?;
+        loop {
             match self.peek() {
                 Token::Identifier(_) | Token::Integer(_) | Token::LParen |
                 Token::Complement => {
-                    let arg = self.parse_primary();
+                    let arg = self.parse_primary()?;
                     expr = unsafe { &*self.arena.alloc(Term::App(expr, arg)) };
                 }
                 _ => break,
             }
         }
-        expr
+        Ok(expr)
     }
 
-    fn parse_primary(&mut self) -> &'a Term<'a> {
-        match self.advance() {
+    fn parse_primary(&mut self) -> Result<&'a Term<'a>, CompilerError> {
+        let token = self.advance();
+        match token.node {
             Token::LParen => {
-                let expr = self.parse_expr();
-                self.consume(Token::RParen, "Expected )");
-                expr
+                let expr = self.parse_expr()?;
+                self.consume(Token::RParen, "Expected )")?;
+                Ok(expr)
             }
-            Token::Integer(val) => unsafe { &*self.arena.alloc(Term::Integer(val)) },
+            Token::Integer(val) => Ok(unsafe { &*self.arena.alloc(Term::Integer(val)) }),
             Token::Identifier(n) => {
                 let term = match n.as_str() {
                     "i32" => Term::I32Type,
@@ -306,28 +367,39 @@ impl<'a, 'arena> Parser<'a, 'arena> {
                     "Bits64" => Term::Bits64Type,
                     "IO" => Term::IOType,
                     "buffer" => {
-                        let size = match self.advance() {
+                        let size_token = self.advance();
+                        let size = match size_token.node {
                             Token::Integer(s) => s as usize,
-                            _ => panic!("Expected buffer size"),
+                            t => return Err(CompilerError::Parse(ParseError {
+                                span: size_token.span,
+                                token: t,
+                                expected: Some("Integer (buffer size)".to_string()),
+                                message: "Expected buffer size".to_string(),
+                            })),
                         };
                         Term::Buffer(size)
                     }
                     "getBits64" => {
-                        let buffer = self.parse_primary();
-                        let index = self.parse_primary();
+                        let buffer = self.parse_primary()?;
+                        let index = self.parse_primary()?;
                         Term::BufferLoad(buffer, index)
                     }
                     "setBits64" => {
-                        let buffer = self.parse_primary();
-                        let index = self.parse_primary();
-                        let value = self.parse_primary();
+                        let buffer = self.parse_primary()?;
+                        let index = self.parse_primary()?;
+                        let value = self.parse_primary()?;
                         Term::BufferStore(buffer, index, value)
                     }
                     _ => Term::Var(n),
                 };
-                unsafe { &*self.arena.alloc(term) }
+                Ok(unsafe { &*self.arena.alloc(term) })
             }
-            t => panic!("Unexpected token in parse_primary: {:?}", t),
+            t => Err(CompilerError::Parse(ParseError {
+                span: token.span,
+                token: t,
+                expected: None,
+                message: "Unexpected token in parse_primary".to_string(),
+            })),
         }
     }
 }

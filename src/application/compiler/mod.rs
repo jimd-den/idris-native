@@ -6,10 +6,6 @@
 //! In accordance with Clean Architecture, the `Compiler` is a Use Case 
 //! that depends only on the Entities (`Term`) and an abstract `Backend` 
 //! interface. Implementation details (LLVM, File I/O) are injected.
-//!
-//! # Screaming Architecture
-//! This module "screams" its intent: parsing Idris source, validating 
-//! QTT multiplicity, and generating binary output.
 
 use crate::domain::Term;
 use crate::domain::arena::Arena;
@@ -20,11 +16,6 @@ use std::collections::HashMap;
 use std::fs;
 
 /// An abstraction for the code generation and toolchain backend.
-/// 
-/// Why this exists:
-/// Dependency Inversion. The Use Case layer must not depend on 
-/// low-level LLVM details. This trait allows us to swap LLVM 
-/// for other backends (WASM, C, etc.) without changing core logic.
 pub trait Backend {
     /// Lowers a high-level `Term` to a string of IR (LLVM IR, etc.).
     fn lower_term(&self, term: &Term, env: &HashMap<String, String>) -> String;
@@ -55,24 +46,31 @@ impl<'a> Compiler<'a> {
             .map_err(|e| format!("Failed to read file: {}", e))?;
         
         let output_path = format!("./{}_bin", filepath.replace(".idr", ""));
-        self.compile_str(&source, &output_path)
+        self.compile_str(&source, &output_path, filepath)
     }
 
     /// Executes the compilation pipeline for a string of Idris 2 source code.
-    /// 
-    /// # Logic Flow (S-04: Decoupled from File I/O)
-    /// 1. Lex/Parse -> Term AST
-    /// 2. QttChecker -> Validate Multiplicity/Bounds
-    /// 3. Backend -> Lower to IR
-    /// 4. Backend -> Compile to Binary
-    pub fn compile_str(&self, source: &str, output_path: &str) -> Result<String, String> {
+    pub fn compile_str(&self, source: &str, output_path: &str, filename: &str) -> Result<String, String> {
         diagnostics::log("COMPILER", "ENTER compile_str");
 
         // 1. Parse
         let mut arena = Arena::new();
-        let tokens = lex(source);
+        let tokens = match lex(source) {
+            Ok(t) => t,
+            Err(e) => {
+                diagnostics::report_error(&e, source, filename);
+                return Err("Lexing failed".to_string());
+            }
+        };
+        
         let mut parser = Parser::new(tokens, &mut arena);
-        let (name, _sig, body, args) = parser.parse_program();
+        let (name, _sig, body, args) = match parser.parse_program() {
+            Ok(p) => p,
+            Err(e) => {
+                diagnostics::report_error(&e, source, filename);
+                return Err("Parsing failed".to_string());
+            }
+        };
         diagnostics::log("COMPILER", &format!("PARSED definition: {}", name));
 
         // 2. QTT Validation
@@ -81,6 +79,7 @@ impl<'a> Compiler<'a> {
             if !checker.check_multiplicity(arg, 1, body) {
                 let err = format!("QTT Multiplicity Error: Linear variable '{}' used incorrectly.", arg);
                 diagnostics::log("COMPILER", &format!("ERROR: {}", err));
+                // TODO: Generate structured QttError and use report_error
                 return Err(err);
             }
         }

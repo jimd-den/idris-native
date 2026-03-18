@@ -13,9 +13,10 @@
 //! keywords, literals), which are then consumed by the parser.
 
 use crate::common::cursor::Cursor;
+use crate::common::errors::{CompilerError, LexError, Span, Spanned};
 
 /// The types of tokens recognized by the Idris Native compiler.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
     Identifier(String),
     Integer(i64),
@@ -45,7 +46,7 @@ pub enum Token {
 }
 
 /// Helper function to tokenize source text.
-pub fn lex(source: &str) -> Vec<Token> {
+pub fn lex(source: &str) -> Result<Vec<Spanned<Token>>, CompilerError> {
     let mut scanner = Scanner::new(source);
     scanner.scan_tokens()
 }
@@ -53,7 +54,9 @@ pub fn lex(source: &str) -> Vec<Token> {
 pub struct Scanner<'a> {
     source: &'a str,
     cursor: Cursor<char>,
-    tokens: Vec<Token>,
+    tokens: Vec<Spanned<Token>>,
+    line: usize,
+    col: usize,
 }
 
 impl<'a> Scanner<'a> {
@@ -62,60 +65,86 @@ impl<'a> Scanner<'a> {
             source,
             cursor: Cursor::new(source.chars().collect()),
             tokens: Vec::new(),
+            line: 1,
+            col: 1,
         }
     }
 
-    /// Scans the source text and returns a vector of tokens.
-    pub fn scan_tokens(&mut self) -> Vec<Token> {
+    /// Scans the source text and returns a vector of tokens or an error.
+    pub fn scan_tokens(&mut self) -> Result<Vec<Spanned<Token>>, CompilerError> {
         let _span = crate::trace_span!("SCANNER", "scan_tokens");
         
         while !self.cursor.is_at_end() {
-            self.scan_token();
+            self.scan_token()?;
         }
         
-        self.tokens.push(Token::EOF);
-        self.tokens.clone()
+        self.add_token(Token::EOF, 1);
+        Ok(self.tokens.clone())
     }
 
-    fn scan_token(&mut self) {
-        let c = match self.cursor.advance() {
-            Some(c) => *c,
-            None => return,
+    fn advance(&mut self) -> Option<char> {
+        let c = self.cursor.advance().copied();
+        if let Some(ch) = c {
+            if ch == '\n' {
+                self.line += 1;
+                self.col = 1;
+            } else {
+                self.col += 1;
+            }
+        }
+        c
+    }
+
+    fn add_token(&mut self, node: Token, len: usize) {
+        let span = Span::new(self.line, self.col.saturating_sub(len), len);
+        self.tokens.push(Spanned::new(node, span));
+    }
+
+    fn scan_token(&mut self) -> Result<(), CompilerError> {
+        let start_col = self.col;
+        let c = match self.advance() {
+            Some(c) => c,
+            None => return Ok(()),
         };
 
         match c {
-            '(' => self.tokens.push(Token::LParen),
-            ')' => self.tokens.push(Token::RParen),
-            ':' => self.tokens.push(Token::Colon),
+            '(' => self.add_token(Token::LParen, 1),
+            ')' => self.add_token(Token::RParen, 1),
+            ':' => self.add_token(Token::Colon, 1),
             '=' => {
                 if self.cursor.match_item(&'>') {
-                    self.tokens.push(Token::FatArrow);
+                    self.col += 1;
+                    self.add_token(Token::FatArrow, 2);
                 } else if self.cursor.match_item(&'=') {
-                    self.tokens.push(Token::Eq);
+                    self.col += 1;
+                    self.add_token(Token::Eq, 2);
                 } else {
-                    self.tokens.push(Token::Assign);
+                    self.add_token(Token::Assign, 1);
                 }
             }
-            '|' => self.tokens.push(Token::Pipe),
-            '`' => self.tokens.push(Token::Backtick),
-            '+' => self.tokens.push(Token::Plus),
+            '|' => self.add_token(Token::Pipe, 1),
+            '`' => self.add_token(Token::Backtick, 1),
+            '+' => self.add_token(Token::Plus, 1),
             '-' => {
                 if self.cursor.match_item(&'>') {
-                    self.tokens.push(Token::Arrow);
+                    self.col += 1;
+                    self.add_token(Token::Arrow, 2);
                 } else if self.cursor.match_item(&'-') {
                     // Comment: skip until end of line
                     while self.cursor.peek() != Some(&'\n') && !self.cursor.is_at_end() {
-                        self.cursor.advance();
+                        self.advance();
                     }
                 } else {
-                    self.tokens.push(Token::Minus);
+                    self.add_token(Token::Minus, 1);
                 }
             }
             '.' => {
                 if self.cursor.match_item(&'&') && self.cursor.match_item(&'.') {
-                    self.tokens.push(Token::BitAnd);
+                    self.col += 2;
+                    self.add_token(Token::BitAnd, 3);
                 } else if self.cursor.match_item(&'|') && self.cursor.match_item(&'.') {
-                    self.tokens.push(Token::BitOr);
+                    self.col += 2;
+                    self.add_token(Token::BitOr, 3);
                 }
             }
             ' ' | '\r' | '\t' | '\n' => (), // Ignore whitespace
@@ -124,33 +153,31 @@ impl<'a> Scanner<'a> {
                     self.number(c);
                 } else if c.is_alphabetic() || c == '_' {
                     self.identifier(c);
+                } else {
+                    return Err(CompilerError::Lex(LexError {
+                        span: Span::new(self.line, start_col, 1),
+                        character: c,
+                        message: format!("Unexpected character: '{}'", c),
+                    }));
                 }
             }
         }
+        Ok(())
     }
 
     fn identifier(&mut self, first: char) {
-        let start = self.cursor.current_pos() - 1;
-        while let Some(c) = self.cursor.peek() {
-            if c.is_alphanumeric() || *c == '_' {
-                self.cursor.advance();
+        let mut text = String::from(first);
+        while let Some(&c) = self.cursor.peek() {
+            if c.is_alphanumeric() || c == '_' {
+                text.push(c);
+                self.advance();
             } else {
                 break;
             }
         }
-        let end = self.cursor.current_pos();
-        // Since we collected chars into a Vec, we need to map back to original source 
-        // or just use the collected chars. For efficiency we'll rebuild string.
-        let mut text = String::new();
-        text.push(first);
-        // This is a bit inefficient due to char collection, but fine for MVP.
-        // We can optimize by tracking byte offsets if needed.
         
-        // Let's just use the source slice if possible.
-        // For now, let's just collect the chars we passed.
-        let tokens_slice: String = self.source.chars().skip(start).take(end - start).collect();
-        
-        let token = match tokens_slice.as_str() {
+        let len = text.len();
+        let token = match text.as_str() {
             "if" => Token::If,
             "then" => Token::Then,
             "else" => Token::Else,
@@ -163,23 +190,23 @@ impl<'a> Scanner<'a> {
             "shiftL" => Token::ShiftL,
             "shiftR" => Token::ShiftR,
             "complement" => Token::Complement,
-            _ => Token::Identifier(tokens_slice),
+            _ => Token::Identifier(text),
         };
-        self.tokens.push(token);
+        self.add_token(token, len);
     }
 
-    fn number(&mut self, _first: char) {
-        let start = self.cursor.current_pos() - 1;
-        while let Some(c) = self.cursor.peek() {
+    fn number(&mut self, first: char) {
+        let mut text = String::from(first);
+        while let Some(&c) = self.cursor.peek() {
             if c.is_digit(10) {
-                self.cursor.advance();
+                text.push(c);
+                self.advance();
             } else {
                 break;
             }
         }
-        let end = self.cursor.current_pos();
-        let text: String = self.source.chars().skip(start).take(end - start).collect();
+        let len = text.len();
         let value = text.parse::<i64>().unwrap_or(0);
-        self.tokens.push(Token::Integer(value));
+        self.add_token(Token::Integer(value), len);
     }
 }

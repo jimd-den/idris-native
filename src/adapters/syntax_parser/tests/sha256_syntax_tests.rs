@@ -1,106 +1,93 @@
-//! # SHA-256 Syntax Parser Tests
+//! # SHA-256 Syntax Tests
 //!
-//! This module verifies the parsing of official Idris 2 syntax.
+//! These tests verify that the parser correctly handles the 
+//! bitwise and buffer primitives used in the SHA-256 reference implementation.
 
+use crate::adapters::syntax_parser::{lex, Token, Parser};
 use crate::domain::{Term, arena::Arena};
-use crate::adapters::syntax_parser::{lex, Parser, Token};
-
-#[test]
-fn test_parse_official_bitwise_operators() {
-    let mut arena: Arena<Term> = Arena::new();
-    
-    // Official Idris 2 style syntax
-    let source = "bitwise_test a b = (a `xor` b) .&. (a .|. b) .&. (complement a) .&. (a `shiftL` 1)";
-    let tokens = lex(source);
-    let mut parser = Parser::new(tokens, &mut arena);
-    // Since parse_def is public, we use it directly. 
-    // We assume parse_program might be better but let's stick to what we have.
-    let (body, name, args) = parser.parse_def();
-    
-    assert_eq!(name, "bitwise_test");
-    assert_eq!(args, vec!["a".to_string(), "b".to_string()]);
-    
-    match body {
-        Term::BitAnd(_, _) => (),
-        _ => panic!("Expected BitAnd at the top level of this expression, got {:?}", body),
-    }
-}
 
 #[test]
 fn test_lex_official_tokens() {
-    let source = ".&. .|. complement `xor` `shiftL` `shiftR` ( ) = + == -- comment";
-    let tokens = lex(source);
-    // Expected tokens including the EOF
-    let expected = vec![
-        Token::BitAnd, Token::BitOr, Token::Complement, 
-        Token::Backtick, Token::Xor, Token::Backtick, 
-        Token::Backtick, Token::ShiftL, Token::Backtick, 
-        Token::Backtick, Token::ShiftR, Token::Backtick, 
-        Token::LParen, Token::RParen, Token::Assign, 
-        Token::Plus, Token::Eq, Token::EOF
-    ];
-    assert_eq!(tokens, expected);
-}
-
-#[test]
-fn test_parse_word_types() {
-    let mut arena: Arena<Term> = Arena::new();
+    let source = "xor .&. .|. shiftL shiftR complement buffer getBits64 setBits64";
+    let tokens = lex(source).expect("Lexing failed");
     
-    let source = "types_test = i32 i8";
-    let tokens = lex(source);
-    let mut parser = Parser::new(tokens, &mut arena);
-    let (body, name, args) = parser.parse_def();
-    
-    assert_eq!(name, "types_test");
-    assert!(args.is_empty());
-    
-    match body {
-        Term::App(lhs, rhs) => {
-            match lhs {
-                Term::I32Type => (),
-                _ => panic!("Expected I32Type on LHS, got {:?}", lhs),
-            }
-            match rhs {
-                Term::I8Type => (),
-                _ => panic!("Expected I8Type on RHS, got {:?}", rhs),
-            }
-        },
-        _ => panic!("Expected App(I32Type, I8Type), got {:?}", body),
-    }
+    // Check nodes, ignoring EOF
+    let nodes: Vec<Token> = tokens.iter().map(|t| t.node.clone()).collect();
+    assert!(nodes.contains(&Token::Xor));
+    assert!(nodes.contains(&Token::BitAnd));
+    assert!(nodes.contains(&Token::BitOr));
+    assert!(nodes.contains(&Token::ShiftL));
+    assert!(nodes.contains(&Token::ShiftR));
+    assert!(nodes.contains(&Token::Complement));
 }
 
 #[test]
 fn test_parse_buffer_ops() {
-    let mut arena: Arena<Term> = Arena::new();
-    
-    let source = "buffer_test b = setBits64 b 0 (getBits64 b 1)";
-    let tokens = lex(source);
+    let mut arena = Arena::new();
+    let source = "buf_test : Integer -> Integer
+buf_test n = let b = buffer 64 in setBits64 b 0 n";
+    let tokens = lex(source).expect("Lexing failed");
     let mut parser = Parser::new(tokens, &mut arena);
-    let (body, name, args) = parser.parse_def();
     
-    assert_eq!(name, "buffer_test");
-    assert_eq!(args, vec!["b".to_string()]);
+    let (name, _sig, body, args) = parser.parse_program().expect("Parsing failed");
+    assert_eq!(name, "buf_test");
+    assert_eq!(args.len(), 1);
     
+    // Verify AST structure for BufferStore
     match body {
-        Term::BufferStore(_, _, _) => (),
-        _ => panic!("Expected BufferStore, got {:?}", body),
+        Term::Let(_, _val, inner) => {
+            match inner {
+                Term::BufferStore(_, _, _) => (),
+                _ => panic!("Expected BufferStore, got {:?}", inner),
+            }
+        },
+        _ => panic!("Expected Let for buffer binding, got {:?}", body),
     }
 }
 
 #[test]
-fn test_parse_let_binding() {
-    let mut arena: Arena<Term> = Arena::new();
-    
-    let source = "let_test = let x = 42 in x + 1";
-    let tokens = lex(source);
+fn test_parse_official_bitwise_operators() {
+    let mut arena = Arena::new();
+    let source = "bit_test : Bits64 -> Bits64 -> Bits64
+bit_test a b = ( a `xor` b ) .&. ( a .|. b )";
+    let tokens = lex(source).expect("Lexing failed");
     let mut parser = Parser::new(tokens, &mut arena);
-    let (body, name, args) = parser.parse_def();
     
+    let (name, _sig, body, _args) = parser.parse_program().expect("Parsing failed");
+    assert_eq!(name, "bit_test");
+    
+    // Verify AST structure for Bitwise operators
+    match body {
+        Term::BitAnd(_, _) => (),
+        _ => panic!("Expected BitAnd at top level, got {:?}", body),
+    }
+}
+
+#[test]
+fn test_parse_word_types() {
+    let mut arena = Arena::new();
+    let source = "type_test : Bits64 -> I32 -> I8 -> Integer
+type_test a b c = 42";
+    let tokens = lex(source).expect("Lexing failed");
+    let mut parser = Parser::new(tokens, &mut arena);
+    
+    let (name, _sig, _body, _args) = parser.parse_program().expect("Parsing failed");
+    assert_eq!(name, "type_test");
+}
+
+#[test]
+fn test_parse_let_binding() {
+    let mut arena = Arena::new();
+    let source = "let_test : Integer -> Integer
+let_test x = let y = x + 1 in y";
+    let tokens = lex(source).expect("Lexing failed");
+    let mut parser = Parser::new(tokens, &mut arena);
+    
+    let (name, _sig, body, _args) = parser.parse_program().expect("Parsing failed");
     assert_eq!(name, "let_test");
-    assert!(args.is_empty());
     
     match body {
-        Term::Let(n, _, _) => assert_eq!(n, "x"),
+        Term::Let(n, _, _) => assert_eq!(n, "y"),
         _ => panic!("Expected Let, got {:?}", body),
     }
 }

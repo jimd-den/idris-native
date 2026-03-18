@@ -6,6 +6,7 @@
 pub mod cursor;
 pub mod logging;
 pub mod test_helpers;
+pub mod errors;
 
 #[cfg(test)]
 mod tests {

@@ -41,6 +41,7 @@ impl Drop for LogSpan {
 ///
 /// Example:
 /// ```
+/// use idris_native::trace_span;
 /// {
 ///     let _span = trace_span!("PARSER", "parse_expr");
 ///     // ... logic ...

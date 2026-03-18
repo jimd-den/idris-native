@@ -1,12 +1,12 @@
 # Implementation Plan: Full Idris 2 Language & Non-QTT Mode (`stubs_and_qtt_20260317`)
 
 ## Phase 1: Structured Error Pipeline (F, G)
-- [ ] **Task: Define `CompilerError` & Remove Diagnostics Mock**
-    - [ ] **Red:** Write tests expecting `Result::Err` instead of panics for syntax errors.
-    - [ ] **Green:** Implement structured `LexError`, `ParseError`, and `QttError`. Remove the hardcoded timestamp in `diagnostics::log` and implement Idris 2 style caret/hint rendering.
-- [ ] **Task: Refactor Scanner & Parser Error Handling**
-    - [ ] **Red:** Write tests for unknown characters in the Scanner and invalid syntax in the Parser to catch panics.
-    - [ ] **Green:** Refactor `consume`, `parse_*` methods, and `Scanner::scan_token` to return `Result<T, CompilerError>` without crashing.
+- [x] **Task: Define `CompilerError` & Remove Diagnostics Mock**
+    - [x] **Red:** Write tests expecting `Result::Err` instead of panics for syntax errors.
+    - [x] **Green:** Implement structured `LexError`, `ParseError`, and `QttError`. Remove the hardcoded timestamp in `diagnostics::log` and implement Idris 2 style caret/hint rendering.
+- [x] **Task: Refactor Scanner & Parser Error Handling**
+    - [x] **Red:** Write tests for unknown characters in the Scanner and invalid syntax in the Parser to catch panics.
+    - [x] **Green:** Refactor `consume`, `parse_*` methods, and `Scanner::scan_token` to return `Result<T, CompilerError>` without crashing.
 - [ ] **Task: Conductor - User Manual Verification 'Phase 1' (Protocol in workflow.md)**
 
 ## Phase 2: Non-QTT Mode & QTT Refinement (1, 2, 5)
