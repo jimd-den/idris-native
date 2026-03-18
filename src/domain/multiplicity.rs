@@ -1,23 +1,25 @@
-//! # QTT Multiplicities (Entities)
+//! # Multiplicity Entity (Domain Layer)
 //!
-//! This module defines the multiplicities used in Quantitative Type Theory 
-//! (QTT) for resource tracking and zero-GC memory management.
+//! This module defines the `Multiplicity` type used by the QTT checker.
 //!
-//! # Strategic Architecture
-//! Multiplicities are a core part of our domain entities, as they define 
-//! how many times a term can be used at runtime.
+//! # Literate Documentation
+//! Quantitative Type Theory (QTT) assigns a 'count' or 'multiplicity' to 
+//! every resource. This allows the compiler to track whether a variable 
+//! is erased (Zero), used exactly once (One), or used any number of 
+//! times (Many).
 //!
-//! # QTT Multiplicities
-//! - **0 (Erased)**: The term is only used at compile-time (types).
-//! - **1 (Linear)**: The term is used exactly once at runtime (deterministic free).
-//! - **$\omega$ (Many)**: The term can be used zero or more times.
+//! # Performance
+//! By resolving these multiplicities at compile-time, we can eliminate 
+//! unnecessary runtime checks and safely manage memory without a 
+//! Garbage Collector.
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+/// QTT Multiplicity representing how many times a resource can be used.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Multiplicity {
-    /// Erased (Compile-time only)
+    /// The resource is erased at runtime (e.g., types, proofs).
     Zero,
-    /// Linear (Used exactly once)
+    /// The resource must be used exactly once (linear).
     One,
-    /// Many (Unrestricted use)
+    /// The resource can be used zero or more times (unrestricted).
     Many,
 }

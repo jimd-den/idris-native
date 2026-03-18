@@ -41,11 +41,17 @@ impl<T> Arena<T> {
     /// # Performance
     /// This is an O(1) operation (amortized). By using Box, we ensure 
     /// that pointers remain stable even if the storage Vec reallocates.
+    /// 
+    /// # Safety
+    /// The returned pointer is valid as long as the Arena is alive.
     pub fn alloc(&mut self, value: T) -> *mut T {
-        let boxed = Box::new(value);
-        let ptr: *mut T = Box::into_raw(boxed);
-        // Safety: We manage the lifetime via the Arena storage.
-        self.storage.push(unsafe { Box::from_raw(ptr) });
-        ptr
+        // We push the boxed value into storage to ensure its lifetime 
+        // is tied to the Arena.
+        self.storage.push(Box::new(value));
+        
+        // We return a raw pointer to the value inside the Box.
+        // Because storage is a Vec<Box<T>>, the memory address of T 
+        // remains stable even when the Vec itself reallocates.
+        self.storage.last_mut().unwrap().as_mut() as *mut T
     }
 }

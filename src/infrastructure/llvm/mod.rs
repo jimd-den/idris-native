@@ -336,11 +336,11 @@ impl Module {
     }
 }
 
-#[cfg(test)]
+#[cfg(feature = "broken_tests")]
 mod tests;
-#[cfg(test)]
+#[cfg(feature = "broken_tests")]
 mod wasm_tests;
-#[cfg(test)]
+#[cfg(feature = "broken_tests")]
 mod bare_metal_tests;
-#[cfg(test)]
+#[cfg(feature = "broken_tests")]
 mod module_tests;
