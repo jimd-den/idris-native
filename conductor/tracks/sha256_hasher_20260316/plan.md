@@ -7,9 +7,9 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 1: Bitwise Primitives and Word Types' (Protocol in workflow.md)
 
 ## Phase 2: Array/Buffer Primitives
-- [ ] Task: TDD Red/Green - Add a fixed-size `Buffer` primitive to `Term` AST alongside `BufferLoad` and `BufferStore`. Write failing structural tests.
-- [ ] Task: TDD Red/Green - Enforce QTT bounds on buffers in `QttChecker` to prevent memory leaks or use-after-free. Write failing boundary tests first.
-- [ ] Task: TDD Red/Green - Implement lowering of buffer operations to LLVM `alloca`, `getelementptr`, `load`, and `store` instructions. Verify with native execution tests.
+- [x] Task: TDD Red/Green - Add a fixed-size `Buffer` primitive to `Term` AST alongside `BufferLoad` and `BufferStore`. Write failing structural tests.
+- [x] Task: TDD Red/Green - Enforce QTT bounds on buffers in `QttChecker` to prevent memory leaks or use-after-free. Write failing boundary tests first.
+- [x] Task: TDD Red/Green - Implement lowering of buffer operations to LLVM `alloca`, `getelementptr`, `load`, and `store` instructions. Verify with native execution tests.
 - [ ] Task: Conductor - User Manual Verification 'Phase 2: Array/Buffer Primitives' (Protocol in workflow.md)
 
 ## Phase 3: SHA-256 Idris Implementation

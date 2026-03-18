@@ -66,6 +66,12 @@ pub enum Term<'a> {
     If(&'a Term<'a>, &'a Term<'a>, &'a Term<'a>),
     /// Recursive definition (LetRec): let rec f x = body in expr
     LetRec(String, &'a Term<'a>, &'a Term<'a>),
+    /// A fixed-size buffer primitive: Buffer(size)
+    Buffer(usize),
+    /// Load from buffer: BufferLoad(buffer, index)
+    BufferLoad(&'a Term<'a>, &'a Term<'a>),
+    /// Store into buffer: BufferStore(buffer, index, value)
+    BufferStore(&'a Term<'a>, &'a Term<'a>, &'a Term<'a>),
 }
 
 #[cfg(test)]
@@ -73,4 +79,5 @@ mod tests {
     pub mod arena_tests;
     pub mod term_tests;
     pub mod sha256_primitives_tests;
+    pub mod buffer_primitives_tests;
 }

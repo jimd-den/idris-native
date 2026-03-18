@@ -15,6 +15,17 @@
     - Implemented lowering for shift operators (`shl`, `lshr`).
     - Refactored `lower_term` to use the configured bit-width for all instructions and function calls.
 - **Added `src/compiler/tests/sha256_lowering_tests.rs`**: New tests verifying the correct lowering of bitwise operations and different word types (`i32`, `i8`) to LLVM IR.
+- **Changes made to `src/core_terms/mod.rs`**: Added `Buffer`, `BufferLoad`, and `BufferStore` variants to the `Term` enum.
+- **Changes made to `src/evaluator/mod.rs`**: Updated `eval`, `eval_owned`, and `substitute` to handle the new buffer variants.
+- **Changes made to `src/qtt_checker/mod.rs`**: Updated `check_term` to handle the new buffer variants in QTT validation.
+- **Added `src/core_terms/tests/buffer_primitives_tests.rs`**: New tests verifying the creation and structure of the new buffer primitives.
+- **Changes made to `src/qtt_checker/mod.rs`**: Implemented compile-time boundary checking for `BufferLoad` and `BufferStore` operations when the index is a literal integer.
+- **Changes made to `src/qtt_checker/tests/buffer_qtt_tests.rs`**: New tests verifying valid and out-of-bounds buffer access detection.
+- **Changes made to `src/compiler/mod.rs`**: Implemented lowering for `Buffer` (alloca), `BufferLoad` (gep + load), and `BufferStore` (gep + store).
+- **Added `src/compiler/tests/buffer_lowering_tests.rs`**: New tests verifying the generation of correct LLVM IR for buffer operations.
+- **Why**: Native support for fixed-size buffers is critical for high-performance low-level tasks like SHA-256. These primitives provide a direct bridge to LLVM's memory model while allowing QTT to ensure safety.
+- **Why**: Static boundary checking is a core feature of a safe systems language. By verifying buffer access at compile-time when possible, we prevent common memory safety vulnerabilities without the need for a runtime GC or heavy checks.
+- **Why**: Buffers are essential for SHA-256 to store message blocks and hash state. These primitives allow for zero-GC memory manipulation within the Idris Native compiler.
 - **Why**: Accurate lowering to LLVM IR is critical for performance and correctness. SHA-256 requires precise bitwise manipulation on 32-bit words, which is now supported.
 - **Why**: A robust parser is essential for translating Idris 2 source code into the internal AST correctly, respecting operator precedence for complex cryptographic algorithms.
 - **Why**: These primitives are foundational for implementing low-level bitwise manipulation algorithms like SHA-256 natively in the compiler.

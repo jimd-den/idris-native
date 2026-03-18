@@ -25,7 +25,8 @@ impl Evaluator {
             Term::Var(_) | Term::Lambda(_, _, _) | Term::Pi(_, _, _) | Term::Integer(_) | Term::IntegerType |
             Term::I32Type | Term::I8Type |
             Term::Add(_, _) | Term::Sub(_, _) | Term::Eq(_, _) | Term::If(_, _, _) | Term::LetRec(_, _, _) |
-            Term::BitXor(_, _) | Term::BitAnd(_, _) | Term::BitOr(_, _) | Term::BitNot(_) | Term::Shl(_, _) | Term::Shr(_, _) => {
+            Term::BitXor(_, _) | Term::BitAnd(_, _) | Term::BitOr(_, _) | Term::BitNot(_) | Term::Shl(_, _) | Term::Shr(_, _) |
+            Term::Buffer(_) | Term::BufferLoad(_, _) | Term::BufferStore(_, _, _) => {
                 term.clone()
             }
 
@@ -104,6 +105,19 @@ impl Evaluator {
                 Term::Shr(
                     Box::leak(Box::new(self.substitute(l, name, replacement))),
                     Box::leak(Box::new(self.substitute(r, name, replacement))),
+                )
+            }
+            Term::BufferLoad(b, i) => {
+                Term::BufferLoad(
+                    Box::leak(Box::new(self.substitute(b, name, replacement))),
+                    Box::leak(Box::new(self.substitute(i, name, replacement))),
+                )
+            }
+            Term::BufferStore(b, i, v) => {
+                Term::BufferStore(
+                    Box::leak(Box::new(self.substitute(b, name, replacement))),
+                    Box::leak(Box::new(self.substitute(i, name, replacement))),
+                    Box::leak(Box::new(self.substitute(v, name, replacement))),
                 )
             }
             _ => body.clone(),

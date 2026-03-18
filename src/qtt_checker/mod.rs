@@ -34,13 +34,42 @@ impl QttChecker {
                 self.check_term(lhs) && self.check_term(rhs)
             }
             Term::BitNot(body) => self.check_term(body),
+            Term::BufferLoad(buffer, index) => {
+                if !self.check_term(buffer) || !self.check_term(index) {
+                    return false;
+                }
+                // Perform boundary check if buffer and index are known at compile-time
+                match (buffer, index) {
+                    (Term::Buffer(size), Term::Integer(idx)) => {
+                        if *idx < 0 || *idx >= (*size as i64) {
+                            return false;
+                        }
+                    }
+                    _ => (), // Complex expressions or variables skip static check
+                }
+                true
+            }
+            Term::BufferStore(buffer, index, value) => {
+                if !self.check_term(buffer) || !self.check_term(index) || !self.check_term(value) {
+                    return false;
+                }
+                match (buffer, index) {
+                    (Term::Buffer(size), Term::Integer(idx)) => {
+                        if *idx < 0 || *idx >= (*size as i64) {
+                            return false;
+                        }
+                    }
+                    _ => (),
+                }
+                true
+            }
             Term::If(cond, then_br, else_br) => {
                 self.check_term(cond) && self.check_term(then_br) && self.check_term(else_br)
             }
             Term::Lambda(_, _, body) => self.check_term(body),
             Term::Pi(_, _, body) => self.check_term(body),
             Term::LetRec(_, _, body) => self.check_term(body),
-            Term::Var(_) | Term::Integer(_) | Term::IntegerType | Term::I32Type | Term::I8Type => true,
+            Term::Var(_) | Term::Integer(_) | Term::IntegerType | Term::I32Type | Term::I8Type | Term::Buffer(_) => true,
         }
     }
 
@@ -89,4 +118,6 @@ impl QttChecker {
 }
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    pub mod buffer_qtt_tests;
+}

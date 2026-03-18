@@ -160,6 +160,47 @@ impl IRBuilder {
                 self.instructions.push(format!("  {} = call {} {}( {} )", res, ty, func_name, args_str));
                 res
             }
+            Term::Buffer(size) => {
+                let res = self.fresh_reg();
+                // For MVP, buffers are always arrays of the current bit_width
+                self.instructions.push(format!("  {} = alloca [{} x {}]", res, size, ty));
+                res
+            }
+            Term::BufferLoad(buffer, index) => {
+                let buf_reg = self.lower_term(buffer, env);
+                let idx_reg = self.lower_term(index, env);
+                
+                // We need the size for the GEP instruction. 
+                // For MVP, we'll try to find it in the term if it's a direct Buffer(size)
+                // Otherwise we might need a more robust type system.
+                let size = match buffer {
+                    Term::Buffer(s) => *s,
+                    _ => 64, // Fallback for now
+                };
+                
+                let ptr_reg = self.fresh_reg();
+                self.instructions.push(format!("  {} = getelementptr [{} x {}], ptr {}, i32 0, i64 {}", ptr_reg, size, ty, buf_reg, idx_reg));
+                
+                let res = self.fresh_reg();
+                self.instructions.push(format!("  {} = load {}, ptr {}", res, ty, ptr_reg));
+                res
+            }
+            Term::BufferStore(buffer, index, value) => {
+                let buf_reg = self.lower_term(buffer, env);
+                let idx_reg = self.lower_term(index, env);
+                let val_reg = self.lower_term(value, env);
+                
+                let size = match buffer {
+                    Term::Buffer(s) => *s,
+                    _ => 64,
+                };
+                
+                let ptr_reg = self.fresh_reg();
+                self.instructions.push(format!("  {} = getelementptr [{} x {}], ptr {}, i32 0, i64 {}", ptr_reg, size, ty, buf_reg, idx_reg));
+                
+                self.instructions.push(format!("  store {} {}, ptr {}", ty, val_reg, ptr_reg));
+                buf_reg // Return the buffer register (standard for some functional store patterns)
+            }
             _ => panic!("Unsupported term for MVP lowering: {:?}", term),
         }
     }
@@ -179,4 +220,5 @@ impl IRBuilder {
 #[cfg(test)]
 mod tests {
     pub mod sha256_lowering_tests;
+    pub mod buffer_lowering_tests;
 }
