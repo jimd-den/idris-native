@@ -66,12 +66,23 @@ pub enum Term<'a> {
     If(&'a Term<'a>, &'a Term<'a>, &'a Term<'a>),
     /// Recursive definition (LetRec): let rec f x = body in expr
     LetRec(String, &'a Term<'a>, &'a Term<'a>),
+    /// A let binding: let x = val in body
+    Let(String, &'a Term<'a>, &'a Term<'a>),
     /// A fixed-size buffer primitive: Buffer(size)
     Buffer(usize),
     /// Load from buffer: BufferLoad(buffer, index)
     BufferLoad(&'a Term<'a>, &'a Term<'a>),
     /// Store into buffer: BufferStore(buffer, index, value)
     BufferStore(&'a Term<'a>, &'a Term<'a>, &'a Term<'a>),
+    /// Pattern matching case expression: case target of { (pat, branch) }
+    Case(&'a Term<'a>, Vec<(String, Vec<String>, &'a Term<'a>)>),
+}
+
+/// Represents an Algebraic Data Type definition.
+pub struct AdtDefinition<'a> {
+    pub name: String,
+    pub params: Vec<String>,
+    pub constructors: Vec<(String, Vec<&'a Term<'a>>)>,
 }
 
 #[cfg(test)]

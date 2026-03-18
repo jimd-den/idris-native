@@ -2,6 +2,7 @@
 
 ## Phase 1: Bitwise Primitives and Word Types [checkpoint: 0ff855f]
 - [x] Task: TDD Red/Green - Extend `Term` AST with Word Types (`i32`, `i8`) and Bitwise Operators (`Xor`, `And`, `Or`, `Not`, `ShiftLeft`, `ShiftRight`). Write failing tests first.
+- [x] Task: TDD Red/Green - Align Parser with official Idris 2 syntax (operators like `xor`, `.&.`, `.|.`, and buffer routines like `setBits64`).
 - [x] Task: TDD Red/Green - Update the Parser to handle the new syntax and operators. Test with malformed and correct syntax strings.
 - [x] Task: TDD Red/Green - Implement lowering for the new types and operators in `IRBuilder`. Write tests verifying bitwise operations lower to correct LLVM IR and execute correctly.
 - [x] Task: Conductor - User Manual Verification 'Phase 1: Bitwise Primitives and Word Types' (Protocol in workflow.md)
@@ -13,8 +14,16 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 2: Array/Buffer Primitives' (Protocol in workflow.md)
 
 
-## Phase 3: SHA-256 Idris Implementation
-- [ ] Task: TDD Red/Green - Write `sha256.idr` incrementally. Test individual block hashing operations and verify state updates via integration tests.
-- [ ] Task: TDD Red/Green - Update `cli_driver` string printing routines to support hex output (for hash strings). Write failing I/O routine tests first.
-- [ ] Task: Compile and execute `sha256.idr` end-to-end to verify correct final hash output matches expected test vectors.
-- [ ] Task: Conductor - User Manual Verification 'Phase 3: SHA-256 Idris Implementation' (Protocol in workflow.md)
+## Phase 3: Mandatory QTT Enforcement & Sample Support
+- [~] Task: Mandatory QTT Multiplicity Checking.
+    - [x] Implement real multiplicity tracking (0, 1, Unrestricted) in `QttChecker`.
+    - [x] Update `cli_driver` to halt if `QttChecker` returns false.
+- [ ] Task: Official Idris 2 Function Syntax.
+    - [x] Implement full parsing of type signatures, including `->`, `:`, and multiplicity annotations.
+- [x] Task: Support for ADTs and Pattern Matching.
+    - [x] Extend AST and Parser for `data` declarations and `case` expressions.
+    - [~] Implement lowering for pattern matching.
+- [ ] Task: Pure LLVM Prelude and Sample Support.
+    - [ ] Create a minimal `Prelude.idr` mapping to pure LLVM syscalls.
+    - [ ] Compile and execute representative samples from `idris2_ref` (e.g., bitwise and buffer tests).
+- [ ] Task: Conductor - User Manual Verification 'Phase 3: Mandatory QTT Enforcement & Sample Support' (Protocol in workflow.md)

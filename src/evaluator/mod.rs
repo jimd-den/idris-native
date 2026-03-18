@@ -24,9 +24,10 @@ impl Evaluator {
             }
             Term::Var(_) | Term::Lambda(_, _, _) | Term::Pi(_, _, _) | Term::Integer(_) | Term::IntegerType |
             Term::I32Type | Term::I8Type |
-            Term::Add(_, _) | Term::Sub(_, _) | Term::Eq(_, _) | Term::If(_, _, _) | Term::LetRec(_, _, _) |
+            Term::Add(_, _) | Term::Sub(_, _) | Term::Eq(_, _) | Term::If(_, _, _) | Term::LetRec(_, _, _) | Term::Let(_, _, _) |
             Term::BitXor(_, _) | Term::BitAnd(_, _) | Term::BitOr(_, _) | Term::BitNot(_) | Term::Shl(_, _) | Term::Shr(_, _) |
-            Term::Buffer(_) | Term::BufferLoad(_, _) | Term::BufferStore(_, _, _) => {
+            Term::Buffer(_) | Term::BufferLoad(_, _) | Term::BufferStore(_, _, _) |
+            Term::Case(_, _) => {
                 term.clone()
             }
 
@@ -119,6 +120,29 @@ impl Evaluator {
                     Box::leak(Box::new(self.substitute(i, name, replacement))),
                     Box::leak(Box::new(self.substitute(v, name, replacement))),
                 )
+            }
+            Term::Let(n, v, b) if n != name => {
+                Term::Let(
+                    n.clone(),
+                    Box::leak(Box::new(self.substitute(v, name, replacement))),
+                    Box::leak(Box::new(self.substitute(b, name, replacement))),
+                )
+            }
+            Term::Case(target, branches) => {
+                let mut new_branches = Vec::new();
+                for (pat_name, pat_args, body) in branches {
+                    // Only substitute if not shadowed by pattern arguments
+                    if pat_name != name && !pat_args.contains(&name.to_string()) {
+                        let sub_body = self.substitute(body, name, replacement);
+                        let leaked: &Term = Box::leak(Box::new(sub_body));
+                        new_branches.push((pat_name.clone(), pat_args.clone(), leaked));
+                    } else {
+                        new_branches.push((pat_name.clone(), pat_args.clone(), *body));
+                    }
+                }
+                let sub_target = self.substitute(target, name, replacement);
+                let leaked_target: &Term = Box::leak(Box::new(sub_target));
+                Term::Case(leaked_target, new_branches)
             }
             _ => body.clone(),
         }

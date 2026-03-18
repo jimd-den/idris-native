@@ -151,3 +151,31 @@ fn test_lower_i8_subtraction() {
         assert!(builder.instructions.iter().any(|instr| instr.contains("sub i8 10, 3")));
     }
 }
+
+#[test]
+fn test_lower_case_expression() {
+    let mut arena: Arena<Term> = Arena::new();
+    let mut builder = IRBuilder::new();
+    let mut env = HashMap::new();
+    
+    unsafe {
+        let x = &*arena.alloc(Term::Var("x".to_string()));
+        env.insert("x".to_string(), "%x".to_string());
+        
+        let zero = &*arena.alloc(Term::Integer(0));
+        let one = &*arena.alloc(Term::Integer(1));
+        
+        // case x of 0 => 1 | _ => x
+        let branches = vec![
+            ("0".to_string(), vec![], one),
+            ("_".to_string(), vec![], x),
+        ];
+        let case_term = &*arena.alloc(Term::Case(x, branches));
+        
+        builder.lower_term(case_term, &env);
+        
+        // We expect comparison, branches, and a phi node
+        assert!(builder.instructions.iter().any(|instr| instr.contains("icmp eq")));
+        assert!(builder.instructions.iter().any(|instr| instr.contains("phi i64")));
+    }
+}

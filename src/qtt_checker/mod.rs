@@ -69,7 +69,61 @@ impl QttChecker {
             Term::Lambda(_, _, body) => self.check_term(body),
             Term::Pi(_, _, body) => self.check_term(body),
             Term::LetRec(_, _, body) => self.check_term(body),
+            Term::Let(_, val, body) => {
+                self.check_term(val) && self.check_term(body)
+            }
+            Term::Case(target, branches) => {
+                if !self.check_term(target) { return false; }
+                for (_, _, body) in branches {
+                    if !self.check_term(body) { return false; }
+                }
+                true
+            }
             Term::Var(_) | Term::Integer(_) | Term::IntegerType | Term::I32Type | Term::I8Type | Term::Buffer(_) => true,
+        }
+    }
+
+    /// Validates that a specific variable name satisfies its multiplicity constraint.
+    pub fn check_multiplicity(&self, name: &str, quantity: i64, body: &Term) -> bool {
+        let usage = self.count_usage(name, body);
+        match quantity {
+            0 => usage == 0,
+            1 => usage == 1,
+            _ => usage >= 0, // Unrestricted
+        }
+    }
+
+    fn count_usage(&self, name: &str, term: &Term) -> i64 {
+        match term {
+            Term::Var(v) if v == name => 1,
+            Term::Var(_) | Term::Integer(_) | Term::IntegerType | Term::I32Type | Term::I8Type | Term::Buffer(_) => 0,
+            Term::Add(l, r) | Term::Sub(l, r) | Term::Eq(l, r) | Term::App(l, r) |
+            Term::BitXor(l, r) | Term::BitAnd(l, r) | Term::BitOr(l, r) |
+            Term::Shl(l, r) | Term::Shr(l, r) | Term::BufferLoad(l, r) => {
+                self.count_usage(name, l) + self.count_usage(name, r)
+            }
+            Term::BitNot(b) => self.count_usage(name, b),
+            Term::BufferStore(b, i, v) | Term::If(b, i, v) => {
+                self.count_usage(name, b) + self.count_usage(name, i) + self.count_usage(name, v)
+            }
+            Term::Lambda(n, _, b) | Term::Pi(n, _, b) | Term::LetRec(n, _, b) | Term::Let(n, _, b) => {
+                if n == name {
+                    0 // Shadowed
+                } else {
+                    self.count_usage(name, b)
+                }
+            }
+            Term::Case(target, branches) => {
+                let target_usage = self.count_usage(name, target);
+                let mut max_branch_usage = 0;
+                for (pat_name, pat_args, body) in branches {
+                    if pat_name != name && !pat_args.contains(&name.to_string()) {
+                        let u = self.count_usage(name, body);
+                        if u > max_branch_usage { max_branch_usage = u; }
+                    }
+                }
+                target_usage + max_branch_usage
+            }
         }
     }
 
@@ -120,4 +174,5 @@ impl QttChecker {
 #[cfg(test)]
 mod tests {
     pub mod buffer_qtt_tests;
+    pub mod multiplicity_tests;
 }

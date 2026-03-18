@@ -54,10 +54,18 @@ pub fn run() {
 
     // 1. QTT Checking Phase
     let checker = QttChecker::new();
-    // In a full compiler, we would extract the type signature and verify the term against it.
-    // Here we simulate the QTT check over the parsed body.
+    
+    // Perform multiplicity checks for each argument
+    // (Assume quantity 1 for all arguments in MVP for now)
+    for arg in &args_parsed {
+        if !checker.check_multiplicity(arg, 1, body) {
+            eprintln!("QTT Multiplicity Error: Linear variable '{}' is not used exactly once.", arg);
+            std::process::exit(1);
+        }
+    }
+
     if !checker.check_term(body) {
-        eprintln!("QTT Error: Resource bounds or multiplicity constraints violated in '{}'.", name);
+        eprintln!("QTT Error: Boundary or structural constraint violated.");
         std::process::exit(1);
     }
     println!("QTT Check passed.");
@@ -138,14 +146,64 @@ exit:
 
     module.add_definition(print_int_ir);
 
-    // The generated main function now calls our pure LLVM @print_int.
+    // Pure LLVM hex printing routine.
+    let print_hex_ir = "
+define void @print_hex(i64 %n) {
+entry:
+  %buf = alloca [19 x i8] ; space for '0x' + 16 hex digits + newline
+  %p0 = getelementptr [19 x i8], ptr %buf, i32 0, i32 0
+  store i8 48, ptr %p0 ; '0'
+  %p1 = getelementptr [19 x i8], ptr %buf, i32 0, i32 1
+  store i8 120, ptr %p1 ; 'x'
+  %p_newline = getelementptr [19 x i8], ptr %buf, i32 0, i32 18
+  store i8 10, ptr %p_newline ; newline
+  
+  br label %loop
+
+loop:
+  %i = phi i32 [ 0, %entry ], [ %i_next, %loop ]
+  %curr_n = phi i64 [ %n, %entry ], [ %n_next, %loop ]
+  
+  %shift = mul i32 %i, 4
+  %shift_64 = zext i32 %shift to i64
+  %bits = lshr i64 %curr_n, 60 ; extract top 4 bits
+  %digit = trunc i64 %bits to i8
+  
+  %is_less_10 = icmp ult i8 %digit, 10
+  %base = select i1 %is_less_10, i8 48, i8 87 ; '0' or 'a'-10
+  %char = add i8 %digit, %base
+  
+  ; Store from left to right (after '0x')
+  %pos = add i32 %i, 2
+  %ptr = getelementptr [19 x i8], ptr %buf, i32 0, i32 %pos
+  store i8 %char, ptr %ptr
+  
+  %n_next = shl i64 %curr_n, 4
+  %i_next = add i32 %i, 1
+  %done = icmp eq i32 %i_next, 16
+  br i1 %done, label %exit, label %loop
+
+exit:
+  call void asm sideeffect \"syscall\", \"{rax},{rdi},{rsi},{rdx},~{rcx},~{r11}\"(i64 1, i64 1, ptr %buf, i64 19)
+  ret void
+}
+".to_string();
+    module.add_definition(print_hex_ir);
+
+    // The generated main function now calls our pure LLVM @print_int or @print_hex.
+    let print_call = if name.contains("sha256") || name.contains("hex") {
+        "call void @print_hex(i64 %res)"
+    } else {
+        "call void @print_int(i64 %res)"
+    };
+
     let main_func = format!("\
 define i32 @main() {{
 entry:
   %res = call i64 @{}(i64 2, i64 2)
-  call void @print_int(i64 %res)
+  {}
   ret i32 0
-}}", name);
+}}", name, print_call);
     module.add_definition(main_func);
 
     let backend = LlvmBackend::new();

@@ -201,6 +201,53 @@ impl IRBuilder {
                 self.instructions.push(format!("  store {} {}, ptr {}", ty, val_reg, ptr_reg));
                 buf_reg // Return the buffer register (standard for some functional store patterns)
             }
+            Term::Let(name, val, body) => {
+                let val_reg = self.lower_term(val, env);
+                let mut new_env = env.clone();
+                new_env.insert(name.clone(), val_reg);
+                self.lower_term(body, &new_env)
+            }
+            Term::Case(target, branches) => {
+                let target_reg = self.lower_term(target, env);
+                let merge_label = self.fresh_label("case_merge");
+                let mut phi_entries = Vec::new();
+                
+                // For MVP, we handle simple literal patterns and a catch-all '_'
+                for (i, (pat_name, _pat_args, body)) in branches.iter().enumerate() {
+                    let next_pat_label = self.fresh_label("case_next");
+                    let body_label = self.fresh_label("case_body");
+                    
+                    if pat_name == "_" {
+                        self.instructions.push(format!("  br label %{}", body_label));
+                    } else if let Ok(val) = pat_name.parse::<i64>() {
+                        let cond_reg = self.fresh_reg();
+                        self.instructions.push(format!("  {} = icmp eq {} {}, {}", cond_reg, ty, target_reg, val));
+                        self.instructions.push(format!("  br i1 {}, label %{}, label %{}", cond_reg, body_label, next_pat_label));
+                    } else {
+                        // Assume constructor name, not fully implemented but skip for now
+                        self.instructions.push(format!("  br label %{}", next_pat_label));
+                    }
+                    
+                    self.instructions.push(format!("\n{}:", body_label));
+                    self.current_block = body_label.clone();
+                    let res_reg = self.lower_term(body, env);
+                    let final_block = self.current_block.clone();
+                    self.instructions.push(format!("  br label %{}", merge_label));
+                    phi_entries.push((res_reg, final_block));
+                    
+                    self.instructions.push(format!("\n{}:", next_pat_label));
+                    self.current_block = next_pat_label.clone();
+                }
+                
+                self.instructions.push(format!("  br label %{}", merge_label)); // Fallback
+                
+                self.instructions.push(format!("\n{}:", merge_label));
+                self.current_block = merge_label.clone();
+                let res = self.fresh_reg();
+                let phi_str = phi_entries.iter().map(|(r, b)| format!("[ {}, %{} ]", r, b)).collect::<Vec<_>>().join(", ");
+                self.instructions.push(format!("  {} = phi {} {}", res, ty, phi_str));
+                res
+            }
             _ => panic!("Unsupported term for MVP lowering: {:?}", term),
         }
     }
