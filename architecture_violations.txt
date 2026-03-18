@@ -1,0 +1,492 @@
+# Idris Native — Architecture Violation Report
+
+---
+
+## 1. Current Folder Structure Snapshot
+
+src
+├── cli_driver
+│   └── mod.rs
+├── compiler
+│   ├── mod.rs
+│   └── tests
+│       ├── buffer_lowering_tests.rs
+│       └── sha256_lowering_tests.rs
+├── core_terms
+│   ├── arena.rs
+│   ├── mod.rs
+│   ├── multiplicity.rs
+│   └── tests
+│       ├── arena_tests.rs
+│       ├── buffer_primitives_tests.rs
+│       ├── sha256_primitives_tests.rs
+│       └── term_tests.rs
+├── diagnostics
+│   └── mod.rs
+├── evaluator
+│   ├── mod.rs
+│   └── tests.rs
+├── lib.rs
+├── llvm_native
+│   ├── bare_metal_tests.rs
+│   ├── mod.rs
+│   ├── module_tests.rs
+│   ├── tests.rs
+│   └── wasm_tests.rs
+├── main.rs
+├── qtt_checker
+│   ├── mod.rs
+│   ├── tests
+│   │   ├── buffer_qtt_tests.rs
+│   │   ├── hypothesis_qtt_tests.rs
+│   │   └── multiplicity_tests.rs
+│   └── tests.rs
+├── repl_session
+│   ├── mod.rs
+│   └── tests.rs
+└── syntax_parser
+    ├── mod.rs
+    ├── parser.rs
+    ├── scanner.rs
+    └── tests
+        ├── hypothesis_tests.rs
+        └── sha256_syntax_tests.rs
+
+14 directories, 33 files
+
+---
+
+## 2. Clean Architecture Violations
+
+Clean Architecture requires that dependencies point inward only: Entities <- Use Cases <- Adapters <- Infrastructure/Drivers.
+
+---
+
+### CA-01 · diagnostics (Adapter) imported into inner layers
+
+Severity: Critical
+
+diagnostics is classified in its own doc comment as an Adapter. Adapters sit outside Use Cases and must never be imported by inner layers. The following inner-layer files import it directly:
+
+  File                          | Line | Import
+  ------------------------------|------|----------------------
+  syntax_parser/scanner.rs      |  10  | use crate::diagnostics;
+  syntax_parser/parser.rs       |  12  | use crate::diagnostics;
+  llvm_native/mod.rs            |  17  | use crate::diagnostics;
+  compiler/mod.rs               |  17  | use crate::diagnostics;
+
+Why it's wrong: The Scanner and Parser are Adapters themselves; they cannot depend on a sibling Adapter. compiler is a Use Case — it must be completely ignorant of any Adapter. llvm_native is Infrastructure — it also cannot reach back into the Adapter layer. All four break the Dependency Rule.
+
+---
+
+### CA-02 · cli_driver hardwires a concrete LlvmBackend
+
+Severity: Critical
+
+cli_driver/mod.rs lines 17-18 and lines 42-43:
+
+  use crate::llvm_native::LlvmBackend;
+  ...
+  let backend = LlvmBackend::new();
+  let compiler = Compiler::new(&backend);
+
+The CLI Driver is the outermost layer. It is allowed to reference infrastructure types — but it should receive or construct them at the composition root and pass them inward via the Backend abstraction. Instead, it reaches directly into llvm_native (Infrastructure) and constructs a concrete type with no possibility of substitution. There is no composition root; the wiring is baked into run().
+
+---
+
+### CA-03 · IRBuilder (Infrastructure) leaks into Use Case layer
+
+Severity: High
+
+IRBuilder is defined in llvm_native/mod.rs (Infrastructure). It is imported directly in two Use Case-layer test files:
+
+  // compiler/tests/sha256_lowering_tests.rs, line 7
+  use crate::compiler::IRBuilder;
+
+  // compiler/tests/buffer_lowering_tests.rs, line 7
+  use crate::compiler::IRBuilder;
+
+The path crate::compiler::IRBuilder implies that IRBuilder is a public member of the compiler module (Use Case layer). An infrastructure implementation detail is being surfaced through a use-case boundary.
+
+---
+
+### CA-04 · evaluator is an architectural orphan
+
+Severity: Medium
+
+evaluator/mod.rs has no module-level doc comment, no stated Clean Architecture role, and is registered in lib.rs (line 7: pub mod evaluator;). No other production module imports or calls it. It exists entirely in isolation. It is not a Use Case, not an Adapter, not Infrastructure — it has no defined place in the architecture. Its Box::leak usage also indicates it was written without awareness of the Arena system.
+
+---
+
+## 3. SOLID Violations
+
+---
+
+### S-01 · SRP — Scanner does tokenization AND logging
+
+File: syntax_parser/scanner.rs
+
+Scanner::new() (line 54) calls diagnostics::log("SCANNER", "INITIALIZE"). scan_tokens() (line 64) calls diagnostics::log(...) at entry and exit. add_token() (line 173) calls diagnostics::log("SCANNER", &format!("TOKEN: {:?}", token)) on every single token produced.
+
+The Scanner has one job: convert source text into tokens. Logging is a second, separate concern being embedded directly into the tokenization loop.
+
+---
+
+### S-02 · SRP — LlvmBackend::new() has side effects on construction
+
+File: llvm_native/mod.rs, line 30
+
+  pub fn new() -> Self {
+      diagnostics::log("LLVM_BACKEND", "INITIALIZE");
+      ...
+  }
+
+Construction of an object should not produce observable side effects. Logging on ::new() makes tests that create a backend noisy and forces a dependency on the diagnostics system just to instantiate the struct.
+
+---
+
+### S-03 · SRP — LlvmBackend::compile_to_binary() has three distinct responsibilities
+
+File: llvm_native/mod.rs, lines 76-90
+
+  fn compile_to_binary(&self, ir: String, output_path: &str) -> std::io::Result<bool> {
+      let ir_path = format!("{}.ll", output_path);
+      fs::write(&ir_path, ir)?;                          // Responsibility 1: disk I/O
+      let status = Command::new("clang")                 // Responsibility 2: subprocess management
+          .arg(&ir_path).arg("-o").arg(output_path)
+          .status()?;
+      let _ = fs::remove_file(ir_path);                 // Responsibility 3: cleanup
+      Ok(status.success())
+  }
+
+Three separate concerns — writing the IR file, invoking the compiler toolchain, and cleaning up temp files — are collapsed into one method. Each should be its own injectable unit.
+
+---
+
+### S-04 · SRP — Compiler::compile_file() does file I/O
+
+File: compiler/mod.rs, line 60
+
+  let source = fs::read_to_string(filepath)
+      .map_err(|e| format!("Failed to read file: {}", e))?;
+
+The Compiler is a Use Case. Use Cases orchestrate domain logic — they must not perform file system operations directly. The source text should be injected (e.g., as a &str or via a SourceReader port), keeping the use case fully testable without the filesystem.
+
+---
+
+### O-01 · OCP — Term enum forces modification of every consumer on extension
+
+File: core_terms/mod.rs, lines 28-82
+
+The Term enum is the single extension point for the entire language. Adding any new language feature requires:
+1. Modifying core_terms/mod.rs
+2. Adding match arms in qtt_checker/mod.rs (check_term, count_usage)
+3. Adding match arms in evaluator/mod.rs (eval, eval_owned, substitute)
+4. Adding match arms in llvm_native/mod.rs (IRBuilder::lower_term)
+5. Updating every test file that uses exhaustive matching
+
+The system is closed to extension and open to modification. A visitor pattern or trait-object-based term representation would make it open for extension.
+
+---
+
+### L-01 · LSP — IRBuilder::lower_term() panics on valid contract inputs
+
+File: llvm_native/mod.rs, final match arm of lower_term()
+
+  _ => panic!("Unsupported term for LLVM lowering: {:?}", term),
+
+IRBuilder::lower_term() accepts a &Term — the full domain type. Many valid Term variants (e.g., Term::Lambda, Term::Pi, Term::LetRec, Term::IOType) are not handled and will cause a runtime panic. Any caller that correctly passes a valid Term may trigger a crash. Implementations must honour the full input contract of the interface.
+
+---
+
+### I-01 · ISP — Backend trait is too fat
+
+File: compiler/mod.rs, lines 27-36
+
+  pub trait Backend {
+      fn lower_term(&self, term: &Term, env: &HashMap<String, String>) -> String;
+      fn lower_program(&self, name: &str, sig: &Term, body: &Term, args: &[String]) -> String;
+      fn compile_to_binary(&self, ir: String, output_path: &str) -> std::io::Result<bool>;
+  }
+
+compile_to_binary is an I/O concern entirely separate from IR lowering. A test backend, an interpreter backend, or a WASM-in-memory backend would be forced to implement binary compilation despite having no use for it. The trait should be split into IrLowerer and BinaryEmitter.
+
+---
+
+### D-01 · DIP — cli_driver directly depends on concrete LlvmBackend
+
+File: cli_driver/mod.rs, lines 18 and 43
+
+  use crate::llvm_native::LlvmBackend;
+  ...
+  let backend = LlvmBackend::new();
+
+The high-level CLI Driver module concretely depends on a low-level infrastructure module. The Backend trait exists precisely to invert this dependency, but cli_driver bypasses it by constructing the concrete type itself. A composition root (e.g., in main.rs) should be the only place this wiring happens.
+
+---
+
+## 4. DRY Violations
+
+---
+
+### DRY-01 · Duplicate buffer bounds check
+
+File: qtt_checker/mod.rs
+
+The following block appears verbatim twice — once in the BufferLoad arm (~line 43) and once in the BufferStore arm (~line 55):
+
+  match (buffer, index) {
+      (Term::Buffer(size), Term::Integer(idx)) => {
+          if *idx < 0 || *idx >= (*size as i64) {
+              return false;
+          }
+      }
+      _ => (),
+  }
+
+Fix: Extract to fn check_buffer_bounds(&self, buffer: &Term, index: &Term) -> bool.
+
+---
+
+### DRY-02 · Duplicate binary-operator dispatch in count_usage and check_term
+
+File: qtt_checker/mod.rs
+
+In count_usage(), ten variants — Add | Sub | Eq | App | BitXor | BitAnd | BitOr | Shl | Shr | BufferLoad — are collapsed into one arm that runs self.count_usage(name, l) + self.count_usage(name, r). The same structural collapse exists in check_term(). The logic "sum both children" / "check both children" is repeated across two methods with no shared helper.
+
+Fix: fn count_binary(&self, name: &str, l: &Term, r: &Term) -> i64 { self.count_usage(name, l) + self.count_usage(name, r) }
+
+---
+
+### DRY-03 · Duplicate lexer cursor boilerplate across Scanner and Parser
+
+Files: syntax_parser/scanner.rs, syntax_parser/parser.rs
+
+Both modules independently implement the same cursor primitives:
+
+  Method              | Scanner   | Parser
+  --------------------|-----------|-------
+  is_at_end()         | ~line 144 | ~line 42
+  peek()              | ~line 152 | ~line 31
+  advance()           | ~line 148 | ~line 35
+  match_char()/check()| ~line 158 | ~line 46
+
+Fix: A generic Cursor<T> struct in common/ used by both.
+
+---
+
+### DRY-04 · Copy-pasted trace logging pattern in every function
+
+Files: compiler/mod.rs, cli_driver/mod.rs, llvm_native/mod.rs, syntax_parser/scanner.rs
+
+Every non-trivial function opens with:
+  diagnostics::log("TAG", "ENTER fn_name(arg: ...)");
+and closes with:
+  diagnostics::log("TAG", "EXIT fn_name -> result");
+
+This pattern is copy-pasted verbatim across at least 8 functions. It is untestable, verbose, and will drift from actual function signatures.
+
+Fix: A trace_span!(tag, fn_name) macro or RAII span guard in common/.
+
+---
+
+### DRY-05 · Repeated unsafe arena.alloc + &* pattern in every test file
+
+Files: core_terms/tests/, qtt_checker/tests/, compiler/tests/, syntax_parser/tests/ (10 test files)
+
+Every test file independently writes:
+  let mut arena: Arena<Term> = Arena::new();
+  unsafe {
+      let x = &*arena.alloc(Term::Integer(42));
+      ...
+  }
+
+Fix: A test utility fn arena_alloc<'a, T>(arena: &'a mut Arena<T>, val: T) -> &'a T in common/test_helpers.rs.
+
+---
+
+### DRY-06 · IRBuilder has no canonical home
+
+Files: llvm_native/mod.rs (definition), compiler/tests/sha256_lowering_tests.rs (imported), compiler/tests/buffer_lowering_tests.rs (imported)
+
+IRBuilder is defined inside llvm_native/mod.rs but consumed by compiler/tests/ as though it belongs to the compiler module. It does not belong to either location — it is a code generation utility that merits its own file (infrastructure/llvm/ir_builder.rs).
+
+---
+
+## 5. KISS Violations
+
+---
+
+### KISS-01 · Overcomplicated Arena::alloc() using raw-pointer round-trip
+
+File: core_terms/arena.rs, lines 43-49
+
+  pub fn alloc(&mut self, value: T) -> *mut T {
+      let boxed = Box::new(value);
+      let ptr: *mut T = Box::into_raw(boxed);           // Decompose Box into raw ptr
+      self.storage.push(unsafe { Box::from_raw(ptr) }); // Immediately recompose it
+      ptr
+  }
+
+The code boxes the value, extracts the raw pointer, then immediately re-boxes it from the same raw pointer to push into storage. This round-trip through unsafe exists solely to hold onto the raw pointer. A simpler implementation avoids the redundant decompose/recompose cycle entirely.
+
+---
+
+### KISS-02 · Box::leak scattered throughout evaluator/mod.rs
+
+File: evaluator/mod.rs
+
+eval() (line ~25) and substitute() (~line 72) call Box::leak on nearly every constructed node:
+
+  Term::App(Box::leak(Box::new(f)), Box::leak(Box::new(a)))
+
+Box::leak permanently surrenders memory ownership to create 'static references. This is a deliberate memory leak used to work around lifetime constraints that the Arena already exists to solve. The evaluator should accept a &mut Arena and allocate through it — exactly the pattern used everywhere else in the codebase.
+
+---
+
+### KISS-03 · Monolithic raw IR string in get_print_int_ir()
+
+File: llvm_native/mod.rs, lines 38-42
+
+  fn get_print_int_ir(&self) -> String {
+      "
+define void @print_int(i64 %n) {
+entry: 
+  %is_zero = icmp eq i64 %n, 0
+ ...
+      // ~600 characters of escaped LLVM IR on one line
+      ".to_string()
+  }
+
+A 600-character single-line escaped string containing hand-crafted LLVM IR with inline asm sideeffect "syscall" is embedded directly in a Rust method. It cannot be read, reasoned about, indented, syntax-highlighted, or tested in isolation.
+
+Fix: Store as a multi-line raw string literal (r#"..."#) or load from an embedded .ll file using include_str!().
+
+---
+
+### KISS-04 · Convoluted termination logic in parse_app()
+
+File: syntax_parser/parser.rs, lines ~270-290
+
+  fn parse_app(&mut self) -> &'a Term<'a> {
+      let mut expr = self.parse_primary();
+      while !self.is_at_end() {
+          match self.peek() {
+              Token::Identifier(_) | Token::Integer(_) | Token::LParen | ... => {
+                  if self.check(&Token::In) || self.check(&Token::Then) || self.check(&Token::Else) ||
+                     self.check(&Token::Of) || self.check(&Token::Arrow) || self.check(&Token::FatArrow) ||
+                     self.check(&Token::Pipe) {
+                      break;
+                  }
+                  ...
+              }
+              _ => break,
+          }
+      }
+      expr
+  }
+
+The outer match arm includes tokens that then immediately trigger a break via an inner if. The terminator logic should be extracted to fn is_app_terminator(&self) -> bool.
+
+---
+
+### KISS-05 · Semantically wrong If handling in count_usage()
+
+File: qtt_checker/mod.rs, ~line 125
+
+  Term::BufferStore(b, i, v) | Term::If(b, i, v) => {
+      self.count_usage(name, b) + self.count_usage(name, i) + self.count_usage(name, v)
+  }
+
+BufferStore and If are collapsed into one arm. For BufferStore, summing all three sub-terms is correct. For If, this is semantically wrong — only one branch executes at runtime, so the usage count should be max(then_count, else_count), not the sum. This is the known bug that hypothesis_qtt_tests.rs was written to document.
+
+---
+
+### KISS-06 · Tests committed to document known bugs
+
+Files: qtt_checker/tests/hypothesis_qtt_tests.rs, syntax_parser/tests/hypothesis_tests.rs
+
+Both files declare in their module-level doc comment that they exist to prove defects:
+
+  hypothesis_qtt_tests.rs: "targeted tests to prove that QttChecker incorrectly sums usages
+                             across mutually exclusive branches"
+  hypothesis_tests.rs:     "targeted tests to prove/disprove the hypothesis that the parser
+                             is over-consuming tokens"
+
+These are bug reports disguised as passing tests. Committing them as part of the test suite means CI is asserting that broken behaviour is correct. Known defects should be tracked as issues; tests should assert correct, intended behaviour.
+
+---
+
+## 6. Proposed Folder Structure
+
+idris_native/
+├── Cargo.toml
+├── src/
+│   ├── lib.rs
+│   ├── main.rs                          <- Composition root only; wires all layers
+│   │
+│   ├── domain/                          <- Was: core_terms/ (Entities, zero external deps)
+│   │   ├── mod.rs
+│   │   ├── term.rs                      <- Term enum extracted to its own file
+│   │   ├── multiplicity.rs              <- Moved from core_terms/multiplicity.rs
+│   │   └── arena.rs                     <- Simplified arena (no raw-ptr round-trip)
+│   │
+│   ├── application/                     <- Use Cases; depends only on domain/
+│   │   ├── mod.rs
+│   │   ├── ports.rs                     <- NEW: Backend, SourceReader, IrLowerer traits (DIP boundary)
+│   │   ├── compiler/
+│   │   │   └── mod.rs                   <- compile_file() accepts &str source, not filepath
+│   │   ├── qtt_checker/
+│   │   │   └── mod.rs
+│   │   └── evaluator/                   <- Promoted: first-class use case with Arena injection
+│   │       └── mod.rs
+│   │
+│   ├── adapters/                        <- Adapters; depends on application/ and domain/
+│   │   ├── mod.rs
+│   │   ├── diagnostics/
+│   │   │   └── mod.rs                   <- Never imported by inner layers
+│   │   ├── syntax_parser/
+│   │   │   ├── mod.rs
+│   │   │   ├── scanner.rs               <- No diagnostics::log; pure tokenization
+│   │   │   └── parser.rs                <- No diagnostics::log; pure parsing
+│   │   └── repl_session/
+│   │       └── mod.rs
+│   │
+│   ├── infrastructure/                  <- Infrastructure; depends on application/ports only
+│   │   ├── mod.rs
+│   │   └── llvm/
+│   │       ├── mod.rs                   <- LlvmBackend: implements IrLowerer + BinaryEmitter
+│   │       ├── ir_builder.rs            <- NEW: IRBuilder extracted; no leaking into compiler/
+│   │       └── toolchain.rs             <- NEW: fs::write + Command("clang") + cleanup isolated
+│   │
+│   ├── drivers/                         <- Outermost; only place that imports Infrastructure
+│   │   └── cli_driver/
+│   │       └── mod.rs                   <- Receives injected Backend; no LlvmBackend import
+│   │
+│   └── common/                          <- NEW: Shared utilities (no business logic)
+│       ├── mod.rs
+│       ├── cursor.rs                    <- Generic Cursor<T>; used by Scanner and Parser
+│       ├── logging.rs                   <- trace_span! macro replacing copy-pasted log calls
+│       └── test_helpers.rs              <- arena_alloc() helper eliminating unsafe boilerplate
+│
+└── tests/                               <- Integration tests only; was: scattered in src/
+    ├── compiler_integration/
+    │   ├── sha256_lowering_tests.rs
+    │   └── buffer_lowering_tests.rs
+    ├── qtt_integration/
+    │   ├── buffer_qtt_tests.rs
+    │   └── multiplicity_tests.rs        <- hypothesis_qtt_tests.rs converted to issues
+    └── parser_integration/
+        └── sha256_syntax_tests.rs       <- hypothesis_tests.rs converted to issues
+
+---
+
+## Summary
+
+  Category              | Violations Found
+  ----------------------|-----------------
+  Clean Architecture    |       4
+  SOLID                 |       8
+  DRY                   |       6
+  KISS                  |       6
+  TOTAL                 |      24

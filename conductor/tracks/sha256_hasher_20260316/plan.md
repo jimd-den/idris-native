@@ -22,8 +22,8 @@
     - [x] Implement full parsing of type signatures, including `->`, `:`, and multiplicity annotations.
 - [x] Task: Support for ADTs and Pattern Matching.
     - [x] Extend AST and Parser for `data` declarations and `case` expressions.
-    - [~] Implement lowering for pattern matching.
-- [ ] Task: Pure LLVM Prelude and Sample Support.
+    - [x] Implement lowering for pattern matching.
+- [~] Task: Pure LLVM Prelude and Sample Support.
     - [ ] Create a minimal `Prelude.idr` mapping to pure LLVM syscalls.
     - [ ] Compile and execute representative samples from `idris2_ref` (e.g., bitwise and buffer tests).
 - [ ] Task: Conductor - User Manual Verification 'Phase 3: Mandatory QTT Enforcement & Sample Support' (Protocol in workflow.md)

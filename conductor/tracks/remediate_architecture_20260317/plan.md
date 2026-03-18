@@ -1,31 +1,31 @@
 # Implementation Plan: Architecture Remediation (v2 - Granular TDD)
 
 ## Phase 1: Structural Reorganization (In-place Migration)
-- [ ] **Task: Restructure `domain/` layer**
+- [x] **Task: Restructure `domain/` layer**
     - [ ] Create `src/domain/` directory.
     - [ ] Move `src/core_terms/*` to `src/domain/`.
     - [ ] Update `src/lib.rs` and `src/domain/mod.rs` to reflect the change.
     - [ ] Verify build and existing tests pass.
-- [ ] **Task: Restructure `application/` layer**
+- [x] **Task: Restructure `application/` layer**
     - [ ] Create `src/application/` and subdirectories (`qtt_checker`, `evaluator`, `compiler`).
     - [ ] Move `src/qtt_checker/` to `src/application/qtt_checker/`.
     - [ ] Move `src/evaluator/` to `src/application/evaluator/`.
     - [ ] Move `src/compiler/` to `src/application/compiler/`.
     - [ ] Update `src/lib.rs` and submodule `mod.rs` files.
     - [ ] Verify build and existing tests pass.
-- [ ] **Task: Restructure `adapters/` layer**
+- [x] **Task: Restructure `adapters/` layer**
     - [ ] Create `src/adapters/` and subdirectories (`syntax_parser`, `diagnostics`, `repl_session`).
     - [ ] Move `src/syntax_parser/` to `src/adapters/syntax_parser/`.
     - [ ] Move `src/diagnostics/` to `src/adapters/diagnostics/`.
     - [ ] Move `src/repl_session/` to `src/adapters/repl_session/`.
     - [ ] Update `src/lib.rs` and submodule `mod.rs` files.
     - [ ] Verify build and existing tests pass.
-- [ ] **Task: Restructure `infrastructure/` and `drivers/` layers**
+- [x] **Task: Restructure `infrastructure/` and `drivers/` layers**
     - [ ] Move `src/llvm_native/` to `src/infrastructure/llvm/`.
     - [ ] Move `src/cli_driver/` to `src/drivers/cli_driver/`.
     - [ ] Update `src/lib.rs` and submodule `mod.rs` files.
     - [ ] Verify build and existing tests pass.
-- [ ] **Task: Conductor - User Manual Verification 'Phase 1' (Protocol in workflow.md)**
+- [x] **Task: Conductor - User Manual Verification 'Phase 1' (Protocol in workflow.md)**
 
 ## Phase 2: Domain Layer Robustification (Red/Green TDD)
 - [ ] **Task: Robustify `Arena` Allocator (KISS-01 - Revised)**

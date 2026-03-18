@@ -1,0 +1,2 @@
+sha256_verify : Bits64 -> Bits64 -> Bits64
+sha256_verify a b = let state = buffer 8 in let block = buffer 64 in let s0 = setBits64 state 0 100 in let s1 = setBits64 state 1 200 in let val = ( a `xor` b ) .&. ( a .|. b ) in let shifted = val `shiftL` 2 in let combined = shifted + ( complement a ) in let st = setBits64 state 2 combined in getBits64 state 2

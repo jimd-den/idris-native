@@ -9,6 +9,6 @@
 - **Idris-Compatible Errors**: The compiler must handle and display errors in a manner consistent with the Idris 2 language specification, ensuring familiarity for Idris developers.
 
 ## Development Principles
-- **QTT Screaming Architecture**: Top-level modules explicitly declare their purpose (e.g., `core_terms`, `qtt_checker`, `llvm_native`). Internal layers rigidly follow Clean Architecture dependencies (Entities -> Use Cases -> Adapters -> Infra).
+- **QTT Screaming Architecture**: Top-level modules explicitly declare their purpose (e.g., `domain`, `qtt_checker`, `llvm_native`). Internal layers rigidly follow Clean Architecture dependencies (Entities -> Use Cases -> Adapters -> Infra).
 - **Data-Oriented & Zero-Cost**: Entities must use data-oriented design (Struct-of-Arrays, Arena allocation) for cache locality. The backend (`llvm_native`) must be strictly zero-GC, leveraging QTT.
 - **Technical Integrity**: All implementations must maintain high technical standards, balancing robustness with the KISS principle.

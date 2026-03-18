@@ -17,7 +17,7 @@
 //! Extreme performance is realized through Data-Oriented Design, cache-friendly 
 //! memory layouts (SoA), and Arena-based allocation.
 
-use idris_native::cli_driver;
+use idris_native::drivers::cli_driver;
 
 fn main() {
     // In accordance with Clean Architecture, we route strictly through 

@@ -1,3 +1,4 @@
+sha256_verify : Bits64 -> Bits64 -> Bits64
 sha256_verify a b = 
     let state = buffer 8 in
     let block = buffer 64 in
