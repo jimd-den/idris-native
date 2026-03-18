@@ -23,7 +23,9 @@ impl Evaluator {
                 }
             }
             Term::Var(_) | Term::Lambda(_, _, _) | Term::Pi(_, _, _) | Term::Integer(_) | Term::IntegerType |
-            Term::Add(_, _) | Term::Sub(_, _) | Term::Eq(_, _) | Term::If(_, _, _) | Term::LetRec(_, _, _) => {
+            Term::I32Type | Term::I8Type |
+            Term::Add(_, _) | Term::Sub(_, _) | Term::Eq(_, _) | Term::If(_, _, _) | Term::LetRec(_, _, _) |
+            Term::BitXor(_, _) | Term::BitAnd(_, _) | Term::BitOr(_, _) | Term::BitNot(_) | Term::Shl(_, _) | Term::Shr(_, _) => {
                 term.clone()
             }
 
@@ -69,6 +71,39 @@ impl Evaluator {
                 Term::App(
                     Box::leak(Box::new(self.substitute(f, name, replacement))),
                     Box::leak(Box::new(self.substitute(a, name, replacement))),
+                )
+            }
+            Term::BitXor(l, r) => {
+                Term::BitXor(
+                    Box::leak(Box::new(self.substitute(l, name, replacement))),
+                    Box::leak(Box::new(self.substitute(r, name, replacement))),
+                )
+            }
+            Term::BitAnd(l, r) => {
+                Term::BitAnd(
+                    Box::leak(Box::new(self.substitute(l, name, replacement))),
+                    Box::leak(Box::new(self.substitute(r, name, replacement))),
+                )
+            }
+            Term::BitOr(l, r) => {
+                Term::BitOr(
+                    Box::leak(Box::new(self.substitute(l, name, replacement))),
+                    Box::leak(Box::new(self.substitute(r, name, replacement))),
+                )
+            }
+            Term::BitNot(t) => {
+                Term::BitNot(Box::leak(Box::new(self.substitute(t, name, replacement))))
+            }
+            Term::Shl(l, r) => {
+                Term::Shl(
+                    Box::leak(Box::new(self.substitute(l, name, replacement))),
+                    Box::leak(Box::new(self.substitute(r, name, replacement))),
+                )
+            }
+            Term::Shr(l, r) => {
+                Term::Shr(
+                    Box::leak(Box::new(self.substitute(l, name, replacement))),
+                    Box::leak(Box::new(self.substitute(r, name, replacement))),
                 )
             }
             _ => body.clone(),

@@ -40,10 +40,26 @@ pub enum Term<'a> {
     Integer(i64),
     /// The base 'Integer' type.
     IntegerType,
+    /// The base 'I32' type.
+    I32Type,
+    /// The base 'I8' type.
+    I8Type,
     /// Arithmetic addition: a + b
     Add(&'a Term<'a>, &'a Term<'a>),
     /// Arithmetic subtraction: a - b
     Sub(&'a Term<'a>, &'a Term<'a>),
+    /// Bitwise XOR: a ^ b
+    BitXor(&'a Term<'a>, &'a Term<'a>),
+    /// Bitwise AND: a & b
+    BitAnd(&'a Term<'a>, &'a Term<'a>),
+    /// Bitwise OR: a | b
+    BitOr(&'a Term<'a>, &'a Term<'a>),
+    /// Bitwise NOT: ~a
+    BitNot(&'a Term<'a>),
+    /// Bitwise shift left: a << b
+    Shl(&'a Term<'a>, &'a Term<'a>),
+    /// Bitwise shift right: a >> b
+    Shr(&'a Term<'a>, &'a Term<'a>),
     /// Equality comparison: a == b
     Eq(&'a Term<'a>, &'a Term<'a>),
     /// Control flow: if cond then t else f
@@ -56,4 +72,5 @@ pub enum Term<'a> {
 mod tests {
     pub mod arena_tests;
     pub mod term_tests;
+    pub mod sha256_primitives_tests;
 }

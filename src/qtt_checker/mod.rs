@@ -28,16 +28,19 @@ impl QttChecker {
     /// Recursively validates the term against QTT constraints.
     pub fn check_term(&self, term: &Term) -> bool {
         match term {
-            Term::Add(lhs, rhs) | Term::Sub(lhs, rhs) | Term::Eq(lhs, rhs) | Term::App(lhs, rhs) => {
+            Term::Add(lhs, rhs) | Term::Sub(lhs, rhs) | Term::Eq(lhs, rhs) | Term::App(lhs, rhs) |
+            Term::BitXor(lhs, rhs) | Term::BitAnd(lhs, rhs) | Term::BitOr(lhs, rhs) |
+            Term::Shl(lhs, rhs) | Term::Shr(lhs, rhs) => {
                 self.check_term(lhs) && self.check_term(rhs)
             }
+            Term::BitNot(body) => self.check_term(body),
             Term::If(cond, then_br, else_br) => {
                 self.check_term(cond) && self.check_term(then_br) && self.check_term(else_br)
             }
             Term::Lambda(_, _, body) => self.check_term(body),
             Term::Pi(_, _, body) => self.check_term(body),
             Term::LetRec(_, _, body) => self.check_term(body),
-            Term::Var(_) | Term::Integer(_) | Term::IntegerType => true,
+            Term::Var(_) | Term::Integer(_) | Term::IntegerType | Term::I32Type | Term::I8Type => true,
         }
     }
 

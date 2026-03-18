@@ -12,6 +12,7 @@ pub struct IRBuilder {
     next_reg: usize,
     label_counter: usize,
     current_block: String,
+    bit_width: u32,
 }
 
 impl IRBuilder {
@@ -21,7 +22,16 @@ impl IRBuilder {
             next_reg: 1, // Start at 1 to avoid colliding with named arguments
             label_counter: 0,
             current_block: "entry".to_string(),
+            bit_width: 64, // Default to i64
         }
+    }
+
+    pub fn set_bit_width(&mut self, width: u32) {
+        self.bit_width = width;
+    }
+
+    fn get_type_str(&self) -> String {
+        format!("i{}", self.bit_width)
     }
 
     pub fn fresh_reg(&mut self) -> String {
@@ -38,6 +48,7 @@ impl IRBuilder {
 
     /// Recursively lowers a `Term` to LLVM IR, returning the register/value string.
     pub fn lower_term(&mut self, term: &Term, env: &HashMap<String, String>) -> String {
+        let ty = self.get_type_str();
         match term {
             Term::Integer(val) => format!("{}", val),
             Term::Var(name) => {
@@ -47,21 +58,63 @@ impl IRBuilder {
                 let l_reg = self.lower_term(lhs, env);
                 let r_reg = self.lower_term(rhs, env);
                 let res = self.fresh_reg();
-                self.instructions.push(format!("  {} = add i64 {}, {}", res, l_reg, r_reg));
+                self.instructions.push(format!("  {} = add {} {}, {}", res, ty, l_reg, r_reg));
                 res
             }
             Term::Sub(lhs, rhs) => {
                 let l_reg = self.lower_term(lhs, env);
                 let r_reg = self.lower_term(rhs, env);
                 let res = self.fresh_reg();
-                self.instructions.push(format!("  {} = sub i64 {}, {}", res, l_reg, r_reg));
+                self.instructions.push(format!("  {} = sub {} {}, {}", res, ty, l_reg, r_reg));
                 res
             }
             Term::Eq(lhs, rhs) => {
                 let l_reg = self.lower_term(lhs, env);
                 let r_reg = self.lower_term(rhs, env);
                 let res = self.fresh_reg();
-                self.instructions.push(format!("  {} = icmp eq i64 {}, {}", res, l_reg, r_reg));
+                self.instructions.push(format!("  {} = icmp eq {} {}, {}", res, ty, l_reg, r_reg));
+                res
+            }
+            Term::BitXor(lhs, rhs) => {
+                let l_reg = self.lower_term(lhs, env);
+                let r_reg = self.lower_term(rhs, env);
+                let res = self.fresh_reg();
+                self.instructions.push(format!("  {} = xor {} {}, {}", res, ty, l_reg, r_reg));
+                res
+            }
+            Term::BitAnd(lhs, rhs) => {
+                let l_reg = self.lower_term(lhs, env);
+                let r_reg = self.lower_term(rhs, env);
+                let res = self.fresh_reg();
+                self.instructions.push(format!("  {} = and {} {}, {}", res, ty, l_reg, r_reg));
+                res
+            }
+            Term::BitOr(lhs, rhs) => {
+                let l_reg = self.lower_term(lhs, env);
+                let r_reg = self.lower_term(rhs, env);
+                let res = self.fresh_reg();
+                self.instructions.push(format!("  {} = or {} {}, {}", res, ty, l_reg, r_reg));
+                res
+            }
+            Term::BitNot(body) => {
+                let reg = self.lower_term(body, env);
+                let res = self.fresh_reg();
+                // LLVM doesn't have 'not', use 'xor -1'
+                self.instructions.push(format!("  {} = xor {} {}, -1", res, ty, reg));
+                res
+            }
+            Term::Shl(lhs, rhs) => {
+                let l_reg = self.lower_term(lhs, env);
+                let r_reg = self.lower_term(rhs, env);
+                let res = self.fresh_reg();
+                self.instructions.push(format!("  {} = shl {} {}, {}", res, ty, l_reg, r_reg));
+                res
+            }
+            Term::Shr(lhs, rhs) => {
+                let l_reg = self.lower_term(lhs, env);
+                let r_reg = self.lower_term(rhs, env);
+                let res = self.fresh_reg();
+                self.instructions.push(format!("  {} = lshr {} {}, {}", res, ty, l_reg, r_reg));
                 res
             }
             Term::If(cond, then_br, else_br) => {
@@ -88,7 +141,7 @@ impl IRBuilder {
                 self.instructions.push(format!("\n{}:", merge_label));
                 self.current_block = merge_label.clone();
                 let res = self.fresh_reg();
-                self.instructions.push(format!("  {} = phi i64 [ {}, %{} ], [ {}, %{} ]", res, then_reg, final_then_block, else_reg, final_else_block));
+                self.instructions.push(format!("  {} = phi {} [ {}, %{} ], [ {}, %{} ]", res, ty, then_reg, final_then_block, else_reg, final_else_block));
                 res
             }
             Term::App(_, _) => {
@@ -103,8 +156,8 @@ impl IRBuilder {
                 }
 
                 let res = self.fresh_reg();
-                let args_str = arg_regs.iter().map(|a| format!("i64 {}", a)).collect::<Vec<_>>().join(", ");
-                self.instructions.push(format!("  {} = call i64 {}({})", res, func_name, args_str));
+                let args_str = arg_regs.iter().map(|a| format!("{} {}", ty, a)).collect::<Vec<_>>().join(", ");
+                self.instructions.push(format!("  {} = call {} {}( {} )", res, ty, func_name, args_str));
                 res
             }
             _ => panic!("Unsupported term for MVP lowering: {:?}", term),
@@ -123,3 +176,7 @@ impl IRBuilder {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    pub mod sha256_lowering_tests;
+}

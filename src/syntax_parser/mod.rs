@@ -12,7 +12,7 @@ pub fn lex(input: &str) -> Vec<String> {
                 tokens.push(current.clone());
                 current.clear();
             }
-        } else if c == '(' || c == ')' || c == '=' || c == '+' || c == '-' {
+        } else if c == '(' || c == ')' || c == '=' || c == '+' || c == '-' || c == '^' || c == '&' || c == '|' || c == '~' || c == '<' || c == '>' {
             if !current.is_empty() {
                 tokens.push(current.clone());
                 current.clear();
@@ -24,6 +24,22 @@ pub fn lex(input: &str) -> Vec<String> {
                     tokens.push("==".to_string());
                 } else {
                     tokens.push("=".to_string());
+                }
+            } else if c == '<' {
+                chars.next();
+                if let Some(&'<') = chars.peek() {
+                    chars.next();
+                    tokens.push("<<".to_string());
+                } else {
+                    tokens.push("<".to_string());
+                }
+            } else if c == '>' {
+                chars.next();
+                if let Some(&'>') = chars.peek() {
+                    chars.next();
+                    tokens.push(">>".to_string());
+                } else {
+                    tokens.push(">".to_string());
                 }
             } else {
                 tokens.push(c.to_string());
@@ -89,15 +105,95 @@ impl<'a, 'arena> Parser<'a, 'arena> {
                 return unsafe { &*self.arena.alloc(term) };
             }
         }
+        self.parse_comparison()
+    }
 
-        let mut lhs = self.parse_app();
-        
+    fn parse_comparison(&mut self) -> &'a Term<'a> {
+        let mut lhs = self.parse_bitwise_or();
         while let Some(t) = self.peek() {
-            if t == "==" || t == "+" || t == "-" {
+            if t == "==" {
+                self.advance();
+                let rhs = self.parse_bitwise_or();
+                let term = Term::Eq(lhs, rhs);
+                lhs = unsafe { &*self.arena.alloc(term) };
+            } else {
+                break;
+            }
+        }
+        lhs
+    }
+
+    fn parse_bitwise_or(&mut self) -> &'a Term<'a> {
+        let mut lhs = self.parse_bitwise_xor();
+        while let Some(t) = self.peek() {
+            if t == "|" {
+                self.advance();
+                let rhs = self.parse_bitwise_xor();
+                let term = Term::BitOr(lhs, rhs);
+                lhs = unsafe { &*self.arena.alloc(term) };
+            } else {
+                break;
+            }
+        }
+        lhs
+    }
+
+    fn parse_bitwise_xor(&mut self) -> &'a Term<'a> {
+        let mut lhs = self.parse_bitwise_and();
+        while let Some(t) = self.peek() {
+            if t == "^" {
+                self.advance();
+                let rhs = self.parse_bitwise_and();
+                let term = Term::BitXor(lhs, rhs);
+                lhs = unsafe { &*self.arena.alloc(term) };
+            } else {
+                break;
+            }
+        }
+        lhs
+    }
+
+    fn parse_bitwise_and(&mut self) -> &'a Term<'a> {
+        let mut lhs = self.parse_shift();
+        while let Some(t) = self.peek() {
+            if t == "&" {
+                self.advance();
+                let rhs = self.parse_shift();
+                let term = Term::BitAnd(lhs, rhs);
+                lhs = unsafe { &*self.arena.alloc(term) };
+            } else {
+                break;
+            }
+        }
+        lhs
+    }
+
+    fn parse_shift(&mut self) -> &'a Term<'a> {
+        let mut lhs = self.parse_arithmetic();
+        while let Some(t) = self.peek() {
+            if t == "<<" || t == ">>" {
                 let op = self.advance().unwrap();
-                let rhs = self.parse_app();
+                let rhs = self.parse_arithmetic();
                 let term = match op.as_str() {
-                    "==" => Term::Eq(lhs, rhs),
+                    "<<" => Term::Shl(lhs, rhs),
+                    ">>" => Term::Shr(lhs, rhs),
+                    _ => unreachable!(),
+                };
+                lhs = unsafe { &*self.arena.alloc(term) };
+            } else {
+                break;
+            }
+        }
+        lhs
+    }
+
+    fn parse_arithmetic(&mut self) -> &'a Term<'a> {
+        let mut lhs = self.parse_unary();
+        while let Some(t) = self.peek() {
+            if t == "+" || t == "-" {
+                let op = self.advance().unwrap();
+                let rhs = self.parse_unary();
+                let term = match op.as_str() {
                     "+" => Term::Add(lhs, rhs),
                     "-" => Term::Sub(lhs, rhs),
                     _ => unreachable!(),
@@ -110,10 +206,24 @@ impl<'a, 'arena> Parser<'a, 'arena> {
         lhs
     }
 
+    fn parse_unary(&mut self) -> &'a Term<'a> {
+        if let Some(t) = self.peek() {
+            if t == "~" {
+                self.advance();
+                let body = self.parse_unary();
+                let term = Term::BitNot(body);
+                return unsafe { &*self.arena.alloc(term) };
+            }
+        }
+        self.parse_app()
+    }
+
     fn parse_app(&mut self) -> &'a Term<'a> {
         let mut expr = self.parse_primary();
         while let Some(t) = self.peek() {
-            if t != "==" && t != "+" && t != "-" && t != "then" && t != "else" && t != ")" {
+            // Function application has higher precedence than infix operators
+            if t != "==" && t != "+" && t != "-" && t != "then" && t != "else" && t != ")" &&
+               t != "|" && t != "^" && t != "&" && t != "<<" && t != ">>" {
                 let arg = self.parse_primary();
                 let term = Term::App(expr, arg);
                 expr = unsafe { &*self.arena.alloc(term) };
@@ -130,6 +240,15 @@ impl<'a, 'arena> Parser<'a, 'arena> {
             let expr = self.parse_expr();
             if self.advance().unwrap() != ")" { panic!("Expected )"); }
             expr
+        } else if t == "i32" {
+            let term = Term::I32Type;
+            unsafe { &*self.arena.alloc(term) }
+        } else if t == "i8" {
+            let term = Term::I8Type;
+            unsafe { &*self.arena.alloc(term) }
+        } else if t == "Integer" {
+            let term = Term::IntegerType;
+            unsafe { &*self.arena.alloc(term) }
         } else if let Ok(val) = t.parse::<i64>() {
             let term = Term::Integer(val);
             unsafe { &*self.arena.alloc(term) }
@@ -138,5 +257,10 @@ impl<'a, 'arena> Parser<'a, 'arena> {
             unsafe { &*self.arena.alloc(term) }
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    pub mod sha256_syntax_tests;
 }
 
