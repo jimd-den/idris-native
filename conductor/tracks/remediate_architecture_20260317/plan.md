@@ -50,13 +50,13 @@
 - [x] **Task: Conductor - User Manual Verification 'Phase 3' (Protocol in workflow.md)**
 
 ## Phase 4: Application Layer Refinement (Red/Green TDD)
-- [ ] **Task: Refactor `QttChecker` Usage Logic (KISS-05, DRY-01, DRY-02)**
-    - [ ] **Red:** Update `src/application/qtt_checker/tests/multiplicity_tests.rs` with failing `If` branch usage counts.
-    - [ ] **Green:** Refactor `count_usage` to use `max` for branches. Extract `check_buffer_bounds` and `count_binary` into small, composable functions.
-- [ ] **Task: Integrate `Evaluator` with `Arena` (CA-04, KISS-02)**
-    - [ ] **Red:** Write tests in `src/application/evaluator/tests/memory_leak_tests.rs` that fail without Arena injection.
-    - [ ] **Green:** Refactor `eval` and `substitute` to use `&mut Arena`, removing `Box::leak`.
-- [ ] **Task: Decouple `Compiler` from I/O (S-04)**
+- [x] **Task: Refactor `QttChecker` Usage Logic (KISS-05, DRY-01, DRY-02)**
+    - [x] **Red:** Update `src/application/qtt_checker/tests/multiplicity_tests.rs` with failing `If` branch usage counts.
+    - [x] **Green:** Refactor `count_usage` to use `max` for branches. Extract `check_buffer_bounds` and `count_binary` into small, composable functions.
+- [x] **Task: Integrate `Evaluator` with `Arena` (CA-04, KISS-02)**
+    - [x] **Red:** Write tests in `src/application/evaluator/tests/memory_leak_tests.rs` that fail without Arena injection.
+    - [x] **Green:** Refactor `eval` and `substitute` to use `&mut Arena`, removing `Box::leak`.
+- [~] **Task: Decouple `Compiler` from I/O (S-04)**
     - [ ] **Red:** Write tests for `Compiler::compile_str()` in `src/application/compiler/tests/string_input_tests.rs`.
     - [ ] **Green:** Refactor `Compiler` to accept `&str` through a port-like interface.
 - [ ] **Task: Conductor - User Manual Verification 'Phase 4' (Protocol in workflow.md)**

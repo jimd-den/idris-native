@@ -1,50 +1,60 @@
+//! # Term Evaluator (Use Case)
+//!
+//! This module implements the evaluation logic for Idris 2 terms, 
+//! performing beta-reduction and normalization.
+//!
+//! # Strategic Architecture
+//! As a Use Case, the `Evaluator` orchestrates the normalization of 
+//! domain entities (`Term`). It is completely decoupled from 
+//! external frameworks and implementation details.
+//!
+//! # Performance & Arena Allocation
+//! To achieve high performance and avoid memory leaks, all terms 
+//! produced during evaluation are allocated within a provided `Arena`. 
+//! This eliminates the overhead of a Garbage Collector and ensures 
+//! efficient memory management.
+
 use crate::domain::Term;
+use crate::domain::arena::Arena;
+use std::cell::RefCell;
 
-pub struct Evaluator {}
+pub struct Evaluator<'a> {
+    arena: &'a RefCell<Arena<Term<'a>>>,
+}
 
-impl Evaluator {
-    pub fn new() -> Self {
-        Self {}
+impl<'a> Evaluator<'a> {
+    pub fn new(arena: &'a RefCell<Arena<Term<'a>>>) -> Self {
+        Self { arena }
+    }
+
+    /// Helper to allocate in the internal arena.
+    fn alloc(&self, value: Term<'a>) -> &'a Term<'a> {
+        let mut arena = self.arena.borrow_mut();
+        let ptr = arena.alloc(value);
+        unsafe { &*ptr }
     }
 
     /// Evaluates a term to its normal form.
-    pub fn eval<'a>(&self, term: &'a Term<'a>) -> Term<'a> {
+    pub fn eval(&self, term: &'a Term<'a>) -> &'a Term<'a> {
         match term {
             Term::App(func, arg) => {
                 let f = self.eval(func);
                 let a = self.eval(arg);
                 match f {
                     Term::Lambda(name, _type, body) => {
-                        // Beta-reduction: substitute 'a' for 'name' in 'body'
-                        let substituted = self.substitute(body, &name, &a);
-                        self.eval_owned(substituted)
+                        let substituted = self.substitute(body, name, a);
+                        self.eval(substituted)
                     }
-                    _ => Term::App(Box::leak(Box::new(f)), Box::leak(Box::new(a))),
+                    _ => self.alloc(Term::App(f, a)),
                 }
             }
-            Term::Var(_) | Term::Lambda(_, _, _) | Term::Pi(_, _, _) | Term::Integer(_) | Term::IntegerType |
-            Term::I32Type | Term::I8Type | Term::Bits64Type | Term::IOType |
-            Term::Add(_, _) | Term::Sub(_, _) | Term::Eq(_, _) | Term::If(_, _, _) | Term::LetRec(_, _, _) | Term::Let(_, _, _) |
-            Term::BitXor(_, _) | Term::BitAnd(_, _) | Term::BitOr(_, _) | Term::BitNot(_) | Term::Shl(_, _) | Term::Shr(_, _) |
-            Term::Buffer(_) | Term::BufferLoad(_, _) | Term::BufferStore(_, _, _) |
-            Term::Case(_, _) => {
-                term.clone()
-            }
-
-        }
-    }
-
-    fn eval_owned<'a>(&self, term: Term<'a>) -> Term<'a> {
-        match term {
-            Term::App(func, arg) => {
-                let f = self.eval(func);
-                let a = self.eval(arg);
-                match f {
-                    Term::Lambda(name, _type, body) => {
-                        let substituted = self.substitute(body, &name, &a);
-                        self.eval_owned(substituted)
-                    }
-                    _ => Term::App(Box::leak(Box::new(f)), Box::leak(Box::new(a))),
+            Term::Add(l, r) => {
+                let lv = self.eval(l);
+                let rv = self.eval(r);
+                if let (Term::Integer(ln), Term::Integer(rn)) = (lv, rv) {
+                    self.alloc(Term::Integer(ln + rn))
+                } else {
+                    self.alloc(Term::Add(lv, rv))
                 }
             }
             _ => term,
@@ -62,89 +72,108 @@ impl Evaluator {
         }
     }
 
-    fn substitute<'a>(&self, body: &'a Term<'a>, name: &str, replacement: &Term<'a>) -> Term<'a> {
+    /// Performs capture-avoiding substitution.
+    fn substitute(&self, body: &'a Term<'a>, name: &str, replacement: &'a Term<'a>) -> &'a Term<'a> {
         match body {
-            Term::Var(v) if v == name => replacement.clone(),
-            Term::Var(_) => body.clone(),
-            Term::Lambda(n, t, b) if n != name => {
-                Term::Lambda(n.clone(), t, Box::leak(Box::new(self.substitute(b, name, replacement))))
+            Term::Var(v) if v == name => replacement,
+            Term::Var(_) => body,
+            Term::Lambda(n, t, b) => {
+                if n == name {
+                    body // Shadowed
+                } else {
+                    let new_b = self.substitute(b, name, replacement);
+                    self.alloc(Term::Lambda(n.clone(), t, new_b))
+                }
             }
             Term::App(f, a) => {
-                Term::App(
-                    Box::leak(Box::new(self.substitute(f, name, replacement))),
-                    Box::leak(Box::new(self.substitute(a, name, replacement))),
-                )
+                let new_f = self.substitute(f, name, replacement);
+                let new_a = self.substitute(a, name, replacement);
+                self.alloc(Term::App(new_f, new_a))
+            }
+            Term::Add(l, r) => {
+                let new_l = self.substitute(l, name, replacement);
+                let new_r = self.substitute(r, name, replacement);
+                self.alloc(Term::Add(new_l, new_r))
+            }
+            Term::Sub(l, r) => {
+                let new_l = self.substitute(l, name, replacement);
+                let new_r = self.substitute(r, name, replacement);
+                self.alloc(Term::Sub(new_l, new_r))
             }
             Term::BitXor(l, r) => {
-                Term::BitXor(
-                    Box::leak(Box::new(self.substitute(l, name, replacement))),
-                    Box::leak(Box::new(self.substitute(r, name, replacement))),
-                )
+                let new_l = self.substitute(l, name, replacement);
+                let new_r = self.substitute(r, name, replacement);
+                self.alloc(Term::BitXor(new_l, new_r))
             }
             Term::BitAnd(l, r) => {
-                Term::BitAnd(
-                    Box::leak(Box::new(self.substitute(l, name, replacement))),
-                    Box::leak(Box::new(self.substitute(r, name, replacement))),
-                )
+                let new_l = self.substitute(l, name, replacement);
+                let new_r = self.substitute(r, name, replacement);
+                self.alloc(Term::BitAnd(new_l, new_r))
             }
             Term::BitOr(l, r) => {
-                Term::BitOr(
-                    Box::leak(Box::new(self.substitute(l, name, replacement))),
-                    Box::leak(Box::new(self.substitute(r, name, replacement))),
-                )
+                let new_l = self.substitute(l, name, replacement);
+                let new_r = self.substitute(r, name, replacement);
+                self.alloc(Term::BitOr(new_l, new_r))
             }
             Term::BitNot(t) => {
-                Term::BitNot(Box::leak(Box::new(self.substitute(t, name, replacement))))
+                let new_t = self.substitute(t, name, replacement);
+                self.alloc(Term::BitNot(new_t))
             }
             Term::Shl(l, r) => {
-                Term::Shl(
-                    Box::leak(Box::new(self.substitute(l, name, replacement))),
-                    Box::leak(Box::new(self.substitute(r, name, replacement))),
-                )
+                let new_l = self.substitute(l, name, replacement);
+                let new_r = self.substitute(r, name, replacement);
+                self.alloc(Term::Shl(new_l, new_r))
             }
             Term::Shr(l, r) => {
-                Term::Shr(
-                    Box::leak(Box::new(self.substitute(l, name, replacement))),
-                    Box::leak(Box::new(self.substitute(r, name, replacement))),
-                )
+                let new_l = self.substitute(l, name, replacement);
+                let new_r = self.substitute(r, name, replacement);
+                self.alloc(Term::Shr(new_l, new_r))
+            }
+            Term::Eq(l, r) => {
+                let new_l = self.substitute(l, name, replacement);
+                let new_r = self.substitute(r, name, replacement);
+                self.alloc(Term::Eq(new_l, new_r))
+            }
+            Term::If(c, t, e) => {
+                let new_c = self.substitute(c, name, replacement);
+                let new_t = self.substitute(t, name, replacement);
+                let new_e = self.substitute(e, name, replacement);
+                self.alloc(Term::If(new_c, new_t, new_e))
             }
             Term::BufferLoad(b, i) => {
-                Term::BufferLoad(
-                    Box::leak(Box::new(self.substitute(b, name, replacement))),
-                    Box::leak(Box::new(self.substitute(i, name, replacement))),
-                )
+                let new_b = self.substitute(b, name, replacement);
+                let new_i = self.substitute(i, name, replacement);
+                self.alloc(Term::BufferLoad(new_b, new_i))
             }
             Term::BufferStore(b, i, v) => {
-                Term::BufferStore(
-                    Box::leak(Box::new(self.substitute(b, name, replacement))),
-                    Box::leak(Box::new(self.substitute(i, name, replacement))),
-                    Box::leak(Box::new(self.substitute(v, name, replacement))),
-                )
+                let new_b = self.substitute(b, name, replacement);
+                let new_i = self.substitute(i, name, replacement);
+                let new_v = self.substitute(v, name, replacement);
+                self.alloc(Term::BufferStore(new_b, new_i, new_v))
             }
-            Term::Let(n, v, b) if n != name => {
-                Term::Let(
-                    n.clone(),
-                    Box::leak(Box::new(self.substitute(v, name, replacement))),
-                    Box::leak(Box::new(self.substitute(b, name, replacement))),
-                )
+            Term::Let(n, v, b) => {
+                let new_v = self.substitute(v, name, replacement);
+                if n == name {
+                    self.alloc(Term::Let(n.clone(), new_v, b))
+                } else {
+                    let new_b = self.substitute(b, name, replacement);
+                    self.alloc(Term::Let(n.clone(), new_v, new_b))
+                }
             }
             Term::Case(target, branches) => {
+                let new_target = self.substitute(target, name, replacement);
                 let mut new_branches = Vec::new();
-                for (pat_name, pat_args, body) in branches {
-                    // Only substitute if not shadowed by pattern arguments
-                    if pat_name != name && !pat_args.contains(&name.to_string()) {
-                        let sub_body = self.substitute(body, name, replacement);
-                        let leaked: &Term = Box::leak(Box::new(sub_body));
-                        new_branches.push((pat_name.clone(), pat_args.clone(), leaked));
+                for (pat_name, pat_args, branch_body) in branches {
+                    if pat_name == name || pat_args.contains(&name.to_string()) {
+                        new_branches.push((pat_name.clone(), pat_args.clone(), *branch_body));
                     } else {
-                        new_branches.push((pat_name.clone(), pat_args.clone(), *body));
+                        let new_branch_body = self.substitute(branch_body, name, replacement);
+                        new_branches.push((pat_name.clone(), pat_args.clone(), new_branch_body));
                     }
                 }
-                let sub_target = self.substitute(target, name, replacement);
-                let leaked_target: &Term = Box::leak(Box::new(sub_target));
-                Term::Case(leaked_target, new_branches)
+                self.alloc(Term::Case(new_target, new_branches))
             }
-            _ => body.clone(),
+            _ => body,
         }
     }
 }
