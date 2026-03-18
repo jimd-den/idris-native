@@ -19,7 +19,7 @@ To provide a fast, natively-compiled Idris 2 compiler and runtime environment th
 ## Key Features
 - **Native REPL**: A lightweight, responsive interactive environment for Idris development.
 - **Multi-Target Backends**: Direct generation of native code (x86_64, AArch64), WebAssembly (WASM), and bare-metal IR via LLVM for maximum efficiency.
-- **Clean Architecture**: Adopting a screaming architecture in Rust to ensure the compiler is maintainable and robust.
+- **Clean Screaming Architecture**: Adopting a rigid Clean Architecture (Entities, Use Cases, Adapters, Infrastructure) mapped to primary domain capabilities to ensure maximum maintainability and testability.
 
 ## Constraints & Principles
 - **Code Purity (Rust)**: Leveraging Rust's safety and performance while maintaining clean, idiomatic code.

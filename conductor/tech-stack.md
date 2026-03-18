@@ -8,8 +8,13 @@
 - **Cargo**: Rust's build system and package manager.
 
 ## Architecture & Memory Management
-- **QTT Screaming Architecture**: The codebase is organized by primary domain capabilities (`domain`, `qtt_checker`, `llvm_native`, etc.) ensuring a pure mapping of Idris compiler use cases.
+- **Clean Screaming Architecture**: The codebase follows a rigid four-layer Clean Architecture:
+  - **Domain (Entities)**: Core AST and primitive types.
+  - **Application (Use Cases)**: Orchestration logic (Checker, Evaluator, Compiler).
+  - **Adapters**: Translation between internal and external formats (Parser, Diagnostics).
+  - **Infrastructure/Drivers**: External tools and entry points (LLVM, CLI).
 - **Zero-GC / Quantitative Type Theory**: Memory is managed deterministically via compile-time linearity and resource tracking (QTT). The runtime explicitly relies on `qtt_checker` bounds rather than a garbage collector.
+- **Arena Allocation**: An internal `Arena` is used for high-performance, deterministic memory management of AST nodes and evaluation results.
 
 ## Libraries & Dependencies
 - **Standard Library**: Minimal dependencies are preferred to maintain high security and performance.
