@@ -28,12 +28,15 @@ impl Backend for MockBackend {
 
 #[test]
 fn test_cli_driver_with_mock() {
-    // We want a way to run the CLI logic with an injected backend.
-    // Currently run() is hardcoded. We need a way to pass the backend.
-    
-    /*
+    // Basic orchestrator check
     let backend = MockBackend;
-    // We can't easily test env::args() without mocking it or 
-    // refactoring run to take arguments.
-    */
+    // We can't easily test the full run() because it uses env::args() 
+    // and calls std::process::exit().
+    // We should refactor run() to take args as a slice.
+}
+
+#[test]
+fn test_no_qtt_flag_parsing() {
+    // Placeholder for flag parsing tests once run() is refactored.
+    // We want to verify that --no-qtt is recognized.
 }

@@ -13,7 +13,7 @@ fn test_exhaustive_match_on_terms() {
         Term::Var(name) => assert_eq!(name, ""),
         Term::Lambda(name, _type, _body) => assert_eq!(name, ""),
         Term::App(_func, _arg) => (),
-        Term::Pi(name, _type, _body) => assert_eq!(name, ""),
+        Term::Pi(name, _mult, _type, _body) => assert_eq!(name, ""),
         Term::Integer(val) => assert_eq!(*val, 42),
         Term::IntegerType => (),
         Term::I32Type => (),

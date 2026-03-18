@@ -3,43 +3,29 @@
 //! This module implements the Command Line Interface (CLI) for the 
 //! Idris Native compiler, providing the primary entrypoint for 
 //! user interactions.
-//!
-//! # Strategic Architecture
-//! As a Framework/Driver, the `drivers::cli_driver` is responsible for parsing 
-//! command-line arguments and routing requests to the `compiler` 
-//! Use Case. It sits at the outermost layer of our Clean Architecture.
-//!
-//! # User Experience
-//! In accordance with our Product Guidelines, the CLI driver should 
-//! follow the Unix philosophy while also offering interactive features 
-//! for a modern developer experience.
 
-use std::env;
 use crate::application::compiler::{Compiler, Backend};
 use crate::adapters::diagnostics;
 
 /// The primary entrypoint for the CLI driver.
-/// 
-/// # Dependency Injection (CA-02, D-01)
-/// This function now receives its `Backend` implementation as an argument, 
-/// typically from the composition root (`main.rs`). This allows us to 
-/// easily swap the production LLVM backend for a mock or alternative 
-/// backend during testing or cross-compilation.
-pub fn run(backend: &dyn Backend) {
+pub fn run(backend: &dyn Backend, args: Vec<String>) {
     diagnostics::log("CLI_DRIVER", "ENTER run()");
-    let args: Vec<String> = env::args().collect();
     
     if args.len() < 2 {
         println!("Idris Native Compiler");
-        println!("Usage: idris_native <file.idr>");
+        println!("Usage: idris_native <file.idr> [--no-qtt]");
         diagnostics::log("CLI_DRIVER", "EXIT run() -> Missing arguments");
         return;
     }
 
     let filepath = &args[1];
+    let qtt_enabled = !args.contains(&"--no-qtt".to_string());
     
-    // Use the injected backend
-    let compiler = Compiler::new(backend);
+    if !qtt_enabled {
+        diagnostics::log("CLI_DRIVER", "MODE: Non-QTT (Linearity checks disabled)");
+    }
+
+    let compiler = Compiler::new(backend).with_qtt(qtt_enabled);
 
     match compiler.compile_file(filepath) {
         Ok(bin_path) => {

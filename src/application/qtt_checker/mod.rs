@@ -2,16 +2,6 @@
 //!
 //! This module implements the Quantitative Type Theory (QTT) elaboration 
 //! and resource tracking logic for the Idris 2 compiler.
-//!
-//! # Strategic Architecture
-//! As a Use Case, the `qtt_checker` orchestrates domain logic (Entities) 
-//! to perform type checking and resource management, adhering to the 
-//! dependency rule by not knowing about Adapters or Infrastructure.
-//!
-//! # QTT & Zero-GC
-//! This is where the deterministic, compile-time memory management 
-//! happens. The checker ensures that resource multiplicities are correctly 
-//! tracked, allowing the compiler to generate GC-free native code.
 
 use crate::domain::multiplicity::Multiplicity;
 use crate::domain::Term;
@@ -51,7 +41,7 @@ impl QttChecker {
                 self.check_term(cond) && self.check_term(then_br) && self.check_term(else_br)
             }
             Term::Lambda(_, _, body) => self.check_term(body),
-            Term::Pi(_, _, body) => self.check_term(body),
+            Term::Pi(_, _, _, body) => self.check_term(body),
             Term::LetRec(_, _, body) => self.check_term(body),
             Term::Let(_, val, body) => {
                 self.check_term(val) && self.check_term(body)
@@ -68,8 +58,6 @@ impl QttChecker {
     }
 
     /// Safely checks if a buffer access is within bounds.
-    /// 
-    /// DRY-01: Extracted helper for buffer bounds checking.
     fn check_buffer_bounds(&self, buffer: &Term, index: &Term) -> bool {
         match (buffer, index) {
             (Term::Buffer(size), Term::Integer(idx)) => {
@@ -77,24 +65,22 @@ impl QttChecker {
                     return false;
                 }
             }
-            _ => (), // Skip static check for complex expressions
+            _ => (),
         }
         true
     }
 
     /// Validates that a specific variable name satisfies its multiplicity constraint.
-    pub fn check_multiplicity(&self, name: &str, quantity: i64, body: &Term) -> bool {
-        let usage = self.count_usage(name, body);
+    pub fn check_multiplicity(&self, name: &str, quantity: Multiplicity, body: &Term) -> bool {
+        let usage = self.count_usage(name, body) as usize;
         match quantity {
-            0 => usage == 0,
-            1 => usage == 1,
-            _ => usage >= 0, // Unrestricted
+            Multiplicity::Zero => usage == 0,
+            Multiplicity::One => usage == 1,
+            Multiplicity::Many => true,
         }
     }
 
     /// Sums the usage of a name across two terms.
-    /// 
-    /// DRY-02: Extracted helper for binary operation usage counting.
     fn count_binary(&self, name: &str, l: &Term, r: &Term) -> i64 {
         self.count_usage(name, l) + self.count_usage(name, r)
     }
@@ -117,11 +103,10 @@ impl QttChecker {
             }
             
             Term::If(c, t, e) => {
-                // KISS-05: Only one branch executes, so we take the max usage.
                 self.count_usage(name, c) + max(self.count_usage(name, t), self.count_usage(name, e))
             }
             
-            Term::Lambda(n, _, b) | Term::Pi(n, _, b) | Term::LetRec(n, _, b) | Term::Let(n, _, b) => {
+            Term::Lambda(n, _, b) | Term::Pi(n, _, _, b) | Term::LetRec(n, _, b) | Term::Let(n, _, b) => {
                 if n == name {
                     0 // Shadowed
                 } else {
@@ -133,7 +118,6 @@ impl QttChecker {
                 let target_usage = self.count_usage(name, target);
                 let mut max_branch_usage = 0;
                 for (pat_name, pat_args, body) in branches {
-                    // Check if variable is shadowed in this branch pattern
                     if pat_name != name && !pat_args.contains(&name.to_string()) {
                         let u = self.count_usage(name, body);
                         if u > max_branch_usage { max_branch_usage = u; }

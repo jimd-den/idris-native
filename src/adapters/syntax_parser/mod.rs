@@ -24,4 +24,5 @@ pub fn lex(input: &str) -> Result<Vec<Spanned<Token>>, CompilerError> {
 mod tests {
     pub mod sha256_syntax_tests;
     pub mod error_tests;
+    pub mod qtt_syntax_tests;
 }

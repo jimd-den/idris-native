@@ -92,7 +92,7 @@ impl IRBuilder {
                 // We return a null-like IR value for now.
                 "i64 0".to_string()
             }
-            Term::Pi(_, _, _) | Term::IntegerType | Term::I32Type | Term::I8Type | Term::Bits64Type | Term::IOType => {
+            Term::Pi(_, _, _, _) | Term::IntegerType | Term::I32Type | Term::I8Type | Term::Bits64Type | Term::IOType => {
                 "i64 0".to_string()
             }
             _ => {

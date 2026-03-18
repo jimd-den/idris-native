@@ -21,5 +21,5 @@ fn main() {
     
     // In accordance with Clean Architecture, we route strictly through 
     // the CLI driver (Drivers Layer), injecting the concrete infrastructure.
-    cli_driver::run(&backend);
+    cli_driver::run(&backend, std::env::args().collect());
 }

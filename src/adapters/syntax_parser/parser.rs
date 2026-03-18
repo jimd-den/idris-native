@@ -7,7 +7,7 @@
 //! internal `Term` (Entities). It encapsulates the syntax rules and 
 //! ensures that the resulting AST is structurally sound.
 
-use crate::domain::{Term, arena::Arena};
+use crate::domain::{Term, arena::Arena, multiplicity::Multiplicity};
 use crate::adapters::syntax_parser::scanner::Token;
 use crate::common::cursor::Cursor;
 use crate::common::errors::{CompilerError, ParseError, Span, Spanned};
@@ -66,7 +66,7 @@ impl<'a, 'arena> Parser<'a, 'arena> {
         
         if name_sig != name_def {
             return Err(CompilerError::Parse(ParseError {
-                span: self.peek_span(), // Should ideally be span of name_def
+                span: self.peek_span(), 
                 token: Token::Identifier(name_def.clone()),
                 expected: Some(name_sig.clone()),
                 message: format!("Name mismatch: {} vs {}", name_sig, name_def),
@@ -95,17 +95,19 @@ impl<'a, 'arena> Parser<'a, 'arena> {
     fn parse_pi(&mut self) -> Result<&'a Term<'a>, CompilerError> {
         let mut lhs = if self.peek() == &Token::LParen {
             let mut is_multiplicity = false;
+            let mut quantity = Multiplicity::Many;
             
             // Check if it's (q x : type)
             if let Some(Spanned { node: Token::Integer(q), .. }) = self.cursor.peek_next() {
                 if *q == 0 || *q == 1 {
                     is_multiplicity = true;
+                    quantity = if *q == 0 { Multiplicity::Zero } else { Multiplicity::One };
                 }
             }
 
             if is_multiplicity {
                 self.advance(); // (
-                let _q = self.advance(); // quantity
+                self.advance(); // quantity
                 let name_token = self.advance();
                 let name = match name_token.node {
                     Token::Identifier(n) => n,
@@ -122,7 +124,7 @@ impl<'a, 'arena> Parser<'a, 'arena> {
                 if self.peek() == &Token::Arrow {
                     self.advance();
                     let body = self.parse_pi()?;
-                    return Ok(unsafe { &*self.arena.alloc(Term::Pi(name, ty, body)) });
+                    return Ok(unsafe { &*self.arena.alloc(Term::Pi(name, quantity, ty, body)) });
                 }
                 ty
             } else {
@@ -138,7 +140,7 @@ impl<'a, 'arena> Parser<'a, 'arena> {
         if self.peek() == &Token::Arrow {
             self.advance();
             let rhs = self.parse_pi()?;
-            lhs = unsafe { &*self.arena.alloc(Term::Pi("_".to_string(), lhs, rhs)) };
+            lhs = unsafe { &*self.arena.alloc(Term::Pi("_".to_string(), Multiplicity::Many, lhs, rhs)) };
         }
         Ok(lhs)
     }
