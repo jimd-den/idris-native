@@ -1,0 +1,8 @@
+{
+  "track_id": "stubs_and_qtt_20260317",
+  "type": "feature",
+  "status": "new",
+  "created_at": "2026-03-17T10:00:00Z",
+  "updated_at": "2026-03-17T10:00:00Z",
+  "description": "Implement full Idris 2 language support, add a non-QTT mode to run standard reference examples, and fix existing architectural stubs and QTT enforcement bugs."
+}
