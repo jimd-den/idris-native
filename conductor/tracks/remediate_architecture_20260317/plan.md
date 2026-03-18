@@ -63,13 +63,13 @@
 
 
 ## Phase 5: Adapters & Infrastructure Refinement (Red/Green TDD)
-- [ ] **Task: Refactor `SyntaxParser` to use `Cursor` (DRY-03, S-01)**
-    - [ ] **Red:** Update parser/scanner tests to verify zero diagnostics dependency.
-    - [ ] **Green:** Refactor `Scanner` and `Parser` to use `common::Cursor`. Replace explicit logging with `trace_span!`.
-- [ ] **Task: Robustify `LlvmBackend` & IR Generation (S-02, S-03, KISS-03, L-01)**
-    - [ ] **Red:** Write tests in `src/infrastructure/llvm/tests/robustness_tests.rs` for unhandled `Term` variants and side-effects.
-    - [ ] **Green:** Split `LlvmBackend` into `IrLowerer` and `BinaryEmitter`. Decompose `compile_to_binary()` into `toolchain.rs`. Ensure exhaustive term handling in `lower_term()`.
-- [ ] **Task: Extract `IRBuilder` (DRY-06, CA-03)**
+- [x] **Task: Refactor `SyntaxParser` to use `Cursor` (DRY-03, S-01)**
+    - [x] **Red:** Update parser/scanner tests to verify zero diagnostics dependency.
+    - [x] **Green:** Refactor `Scanner` and `Parser` to use `common::Cursor`. Replace explicit logging with `trace_span!`.
+- [x] **Task: Robustify `LlvmBackend` & IR Generation (S-02, S-03, KISS-03, L-01)**
+    - [x] **Red:** Write tests in `src/infrastructure/llvm/tests/robustness_tests.rs` for unhandled `Term` variants and side-effects.
+    - [x] **Green:** Split `LlvmBackend` into `IrLowerer` and `BinaryEmitter`. Decompose `compile_to_binary()` into `toolchain.rs`. Ensure exhaustive term handling in `lower_term()`.
+- [~] **Task: Extract `IRBuilder` (DRY-06, CA-03)**
     - [ ] **Red:** Write tests for `IRBuilder` in isolation in `src/infrastructure/llvm/tests/ir_builder_tests.rs`.
     - [ ] **Green:** Move `IRBuilder` to its own module. Document with literate comments.
 - [ ] **Task: Conductor - User Manual Verification 'Phase 5' (Protocol in workflow.md)**

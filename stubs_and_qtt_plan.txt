@@ -1,0 +1,330 @@
+# Stubs, Idris 2 Gaps & QTT Enforcement Plan
+# Idris Native Compiler
+# ============================================================
+
+## 1. INCOMPLETE STUBS & UNIMPLEMENTED CODE
+
+### CATEGORY A -- Tests calling methods that do not exist
+
+The following methods are called in test files but have ZERO implementation anywhere:
+
+  Method                          | Called In                                          | Should Be On
+  --------------------------------|----------------------------------------------------|-------------
+  gen_integer_ir(42)              | src/infrastructure/llvm/tests.rs:17               | LlvmBackend
+  gen_dealloc_ir(Multiplicity)    | src/infrastructure/llvm/tests.rs:25,33            | LlvmBackend
+  gen_print_ir("Hello")           | llvm/tests.rs:41, wasm_tests.rs:26,               | LlvmBackend
+                                  | bare_metal_tests.rs:26, module_tests.rs:14        |
+  set_opt_level(3)                | src/infrastructure/llvm/tests.rs:49               | LlvmBackend
+  get_opt_level()                 | src/infrastructure/llvm/tests.rs:50               | LlvmBackend
+  set_target("wasm32-...")        | wasm_tests.rs:16,24                               | LlvmBackend
+  get_target()                    | wasm_tests.rs:18, bare_metal_tests.rs:18          | LlvmBackend
+  set_target("arm-none-eabi")     | bare_metal_tests.rs:17,24                         | LlvmBackend
+  Module::add_declaration(decl)   | module_tests.rs:20                                | Module
+  LlvmBackend::emit_to_file(...)  | module_tests.rs:37                                | LlvmBackend
+  IRBuilder::set_bit_width(32)    | sha256_lowering_tests.rs:123,142                  | IRBuilder
+
+All of these test files are hidden behind #[cfg(feature = "broken_tests")] --
+they exist but are silenced because the methods they call do not exist on the structs.
+
+---
+
+### CATEGORY B -- WASM & Bare-Metal Backends: Tests only, zero implementation
+
+  - wasm_tests.rs and bare_metal_tests.rs exist but every test is commented out (// #[test])
+  - LlvmBackend has a single hardcoded target_triple = "x86_64-unknown-linux-gnu"
+    with no branching for WASM or ARM
+  - No gen_print_ir that emits @__wasm_print or @__bare_metal_print exists anywhere
+  - No startup or linker code for bare-metal targets exists
+
+  WASM and bare-metal are fully unimplemented. The tests are aspirational specs only.
+
+---
+
+### CATEGORY C -- ReplSession::eval() does not call the compiler
+
+  File: src/adapters/repl_session/mod.rs, lines 29-61
+  Function: ReplSession::eval
+
+  It is a hand-written string matcher:
+    ":t " prefix  -> returns "Integer" or "String" based on character checks only
+    ":l " prefix  -> returns "Loaded file: <name>" (no file is actually loaded)
+    digit string  -> echoes back the string
+    quoted string -> echoes back the string
+    anything else -> returns empty string ""
+
+  It never calls the parser, QTT checker, evaluator, or compiler.
+  The REPL is a proof-of-concept mockup, marked with:
+    // Basic MVP logic for integer and string evaluation.
+
+---
+
+### CATEGORY D -- QttChecker::elaborate_adt and elaborate_interface are no-ops
+
+  File: src/application/qtt_checker/mod.rs
+
+  elaborate_adt (lines 151-162):
+    pub fn elaborate_adt(&self, name: &str) -> bool {
+        let trimmed_name = name.trim();
+        if trimmed_name.is_empty() { return false; }
+        true  // does nothing real
+    }
+
+  elaborate_interface (lines 165-176): identical pattern.
+
+  No ADT type environment, no constructor resolution, no kind checking.
+  The test for elaborate_adt("Maybe") passes trivially because any non-empty
+  string returns true. Interfaces are the same.
+
+---
+
+### CATEGORY E -- IRBuilder::lower_term() panics on half the Term variants
+
+  File: src/infrastructure/llvm/mod.rs, line 296
+
+    _ => panic!("Unsupported term for LLVM lowering: {:?}", term),
+
+  Unhandled variants that will crash the compiler at runtime:
+    Term::Lambda, Term::Pi, Term::LetRec, Term::IntegerType,
+    Term::I32Type, Term::I8Type, Term::Bits64Type, Term::IOType
+
+  Also: flatten_app() at line 307:
+    _ => panic!("Expected function variable in application"),
+
+---
+
+### CATEGORY F -- Parser uses panic-driven error handling (no error recovery)
+
+  File: src/adapters/syntax_parser/parser.rs
+
+  Production code panic sites:
+    Line  53: consume()         -- panic!("Expected {:?}, got {:?}", ...)
+    Line  62: parse_program()   -- panic!("Name mismatch: {} vs {}", ...)
+    Line  71: parse_signature() -- panic!("Expected identifier in signature...")
+    Line 125: parse_def()       -- panic!("Expected identifier in definition...")
+    Line 131: parse_def()       -- panic!("Expected argument name...")
+    Line 155: parse_expr()      -- panic!("Expected identifier in let")
+    Line 173: parse_expr()      -- panic!("Expected pattern")
+    Line 179: parse_expr()      -- panic!("Expected pattern argument")
+    Line 319: parse_primary()   -- panic!("Expected buffer size")
+    Line 327: parse_primary()   -- panic!("Unexpected token in parse_primary: {:?}", t)
+
+  Any syntax error hard-crashes the process. No Result<>, no span/location
+  tracking, no error recovery.
+
+---
+
+### CATEGORY G -- diagnostics::log has a hardcoded fake timestamp
+
+  File: src/adapters/diagnostics/mod.rs, line 24
+
+    println!("[2026-03-17T10:00:00Z] {}: {}", tag, message);
+    // For MVP, we use a mock timestamp to avoid external dependencies.
+
+  Every log line in the compiler emits the same frozen timestamp.
+
+---
+
+### CATEGORY H -- Scanner silently drops unknown characters
+
+  File: src/adapters/syntax_parser/scanner.rs, line 116
+
+    // Ignore unknown characters for MVP
+
+  Characters like *, /, %, !, <, >, @ are silently discarded with no error,
+  no warning, and no position tracking.
+
+---
+
+### CATEGORY I -- lower_program() hardcodes main() arguments as (2, 2)
+
+  File: src/infrastructure/llvm/mod.rs inside lower_program()
+
+    let main_func = format!("... call i64 @{}(i64 2, i64 2) ...", name);
+
+  The auto-generated main() always passes (i64 2, i64 2) regardless of what
+  program is being compiled. This is why ack 2 2 = 7 works -- it is the only
+  input combination the compiler can run.
+
+---
+
+### CATEGORY J -- All MVP markers in source
+
+  src/adapters/diagnostics/mod.rs:22        "For MVP, we use a mock timestamp"
+  src/adapters/repl_session/mod.rs:30       "Basic MVP logic for integer and string evaluation"
+  src/adapters/syntax_parser/scanner.rs:116 "Ignore unknown characters for MVP"
+  src/application/compiler/mod.rs:87        "For MVP, we pass the signature and body to the backend"
+  src/application/compiler/tests/sha256_lowering_tests.rs:122  "For this MVP, let's assume..."
+  src/domain/term.rs:38                     "i64 in this MVP" (in doc comment)
+
+---
+
+## 2. IDRIS 2 FEATURES NOT SUPPORTED
+
+  Feature                                  | Status  | Notes
+  -----------------------------------------|---------|------------------------------------------
+  module declarations                      | NO      | "module Main" is not parsed
+  import statements                        | NO      | "import Data.Buffer" not handled
+  data ADTs with constructors              | NO      | elaborate_adt is a stub
+  Type classes / interfaces                | NO      | elaborate_interface returns true always
+  Pattern matching on constructors         | NO      | Only integer literals + wildcard _ lowered
+  String type and literals in IR           | NO      | REPL echoes strings; compiler has no string IR
+  IO monad / do notation                   | NO      | "main : IO ()" and do blocks unparseable
+  putStrLn / printLn                       | NO      | Only print_int (syscall) exists
+  Negative integer literals                | NO      | Scanner has no - prefix for number literals
+  i32 / i8 as enforced type constraints    | NO      | set_bit_width on IRBuilder not implemented
+  Float / Double                           | NO      | No AST node in Term enum
+  Char                                     | NO      | Not in Term enum
+  List, Vect, Maybe                        | NO      | No generic/parametric type support
+  Dependent types (Pi with values)         | PARTIAL | Pi term exists but not type-checked
+  where clauses                            | NO      | Not parsed
+  mutual blocks                            | NO      | Not parsed
+  record types                             | NO      | Not parsed
+  Multi-definition files                   | NO      | parse_program expects exactly 1 sig + 1 def
+  Block comments ({- -})                   | NO      | Only -- line comments supported
+  Universe levels / Type n                 | NO      | Not in Term enum
+  Totality checking                        | NO      | No termination checker
+  Prelude mapping to syscalls              | NO      | Tracked as incomplete in conductor
+  WASM target                              | NO      | Tests exist, all commented out, no impl
+  Bare-metal / AArch64 target              | NO      | Not started
+  LLVM optimization passes (-O3)           | NO      | clang called with no -O flag
+
+---
+
+## 3. QTT ENFORCEMENT PLAN
+
+### Root Cause: Two Bugs in count_usage That Reject Valid Code
+
+Bug 1 -- If branch counting sums instead of taking max:
+
+  Current (wrong) in qtt_checker/mod.rs ~line 125:
+    Term::BufferStore(b, i, v) | Term::If(b, i, v) => {
+        self.count_usage(name, b) + self.count_usage(name, i) + self.count_usage(name, v)
+    }
+
+  This treats "if cond then x else x" as using x twice.
+  Only one branch executes at runtime.
+  Fix: max(count_usage(then_branch), count_usage(else_branch))
+
+Bug 2 -- Recursive calls treat argument occurrences as independent usages:
+  "ack m n = ack (m - 1) n" counts m as used twice because m appears
+  in two positions in the same expression tree.
+  Fix: track the function name being defined; recursive self-application
+  arguments need a separate counting context.
+
+Because of these bugs, ackermann.idr and sha256.idr FAIL QTT even though
+they are valid Idris 2 programs. These must be fixed before mandatory
+enforcement is meaningful.
+
+---
+
+### Design: Always-On QTT with Three Error Levels
+
+Instead of a --qtt flag, QTT is always active but distinguishes three levels:
+
+  [ERROR]   Hard multiplicity violation.
+            Variable used 0x when it must be 1x, or 2x when it must be 1x.
+            Compilation halts.
+
+  [WARNING] Unrestricted variable in a context that could be linear.
+            Annotation missing but inferable. Compilation continues.
+
+  [NOTE]    Variable could be made linear (compiler optimization suggestion).
+            Purely informational.
+
+This matches how real QTT languages work: you do not opt into type safety,
+you annotate to relax it.
+
+---
+
+### The Error Pipeline
+
+Current state: the compiler panics or returns a bare bool on any error.
+Target state: a structured error pipeline with Idris 2-style output.
+
+  Source text
+      |
+      v
+  [Scanner]      -> LexError    { line, col, char, message }
+      |
+      v
+  [Parser]       -> ParseError  { line, col, token, expected, message }
+      |
+      v
+  [QttChecker]   -> QttError    { variable, declared_mult, actual_uses, location, hint }
+      |
+      v
+  [Diagnostics]  -> renders all errors Idris 2-style with carets + hints
+      |
+      v
+  stdout
+
+Each QttError contains:
+  variable_name:        String
+  declared_multiplicity: Multiplicity  (Zero | One | Many)
+  actual_usage_count:   usize
+  source_location:      Span { line, col, len }
+  context:              String   e.g. "in function body of 'ack'"
+  hint:                 String   e.g. "consider marking as unrestricted or restructure"
+
+Example rendered output:
+
+  Error: QTT multiplicity violation in 'ack'
+    --> ackermann.idr:2:5
+     |
+   2 | ack m n = if m == 0 then n + 1 else ack (m - 1) 1
+     |     ^
+     | Variable 'm' declared linear (1) but counted as used 2 times.
+     | Hint: In if/else branches, a linear variable may appear once in each
+     |       branch -- fix count_usage to use max instead of sum.
+
+---
+
+### QTT Annotations in Source Syntax
+
+For users writing explicitly QTT-annotated Idris 2:
+
+  -- Explicit linear argument (used exactly once):
+  ack : (1 m : Integer) -> (1 n : Integer) -> Integer
+
+  -- Erased argument (compile-time only):
+  id : (0 ty : Type) -> ty -> ty
+
+  -- Unrestricted (default, no annotation):
+  ack : Integer -> Integer -> Integer
+
+The parser has a partial stub for (0 x : Type) and (1 x : Type) in parse_pi()
+but it is not wired through to check_multiplicity.
+
+---
+
+### Source File QTT Compliance
+
+Your existing .idr files do not use QTT annotations. With count_usage bugs fixed
+they will pass automatically. For users writing annotated code:
+
+  -- Compiles cleanly (used exactly once):
+  linearUse : (1 x : Integer) -> Integer
+  linearUse x = x + 1
+
+  -- Fails with QttError (used twice):
+  duplicate : (1 x : Integer) -> Integer
+  duplicate x = x + x
+
+qtt_fail.idr already has "duplicate x = x + x" -- the right test case.
+It needs the error pipeline to report the violation clearly instead of
+silently returning false.
+
+---
+
+### Implementation Priority Order
+
+  1.  Fix count_usage for If branches             (unlocks ackermann + sha256 passing QTT)
+  2.  Fix count_usage for recursive self-calls    (correct linear counting in recursion)
+  3.  Structured error types -- no more panics    (makes the compiler usable)
+  4.  Diagnostics rendering -- Idris 2 style      (makes errors developer-friendly)
+  5.  Wire Pi multiplicity annotations through    (enables explicit QTT source syntax)
+  6.  Implement elaborate_adt / interfaces        (needed for real Idris 2 programs)
+  7.  Wire REPL to real parser + compiler         (after pipeline is stable)
+  8.  Fix WASM / bare-metal stubs                 (after core pipeline is solid)
+  9.  Implement missing LlvmBackend methods       (gen_print_ir, set_target, emit_to_file, etc.)
+  10. Remove MVP comments as each is resolved     (track progress against this list)

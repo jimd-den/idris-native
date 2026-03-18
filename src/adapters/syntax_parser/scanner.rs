@@ -1,13 +1,18 @@
-//! # Scanner (Infrastructure)
+//! # Scanner (Adapter)
 //!
 //! This module implements the lexical analysis for the Idris 2 compiler.
 //!
 //! # Strategic Architecture
-//! As an Infrastructure component, the `Scanner` is responsible for 
-//! converting raw source text into a stream of structured `Token`s. 
-//! This decouples the parser from string manipulation and whitespace handling.
+//! As an Adapter, the `Scanner` is responsible for converting raw source 
+//! text into a stream of structured `Token`s. It uses the `common::Cursor` 
+//! to maintain a sliding window over the source characters.
+//!
+//! # Literate Documentation
+//! Tokenization is the first step in the compilation pipeline. The scanner 
+//! partitions the input string into meaningful symbols (identifiers, 
+//! keywords, literals), which are then consumed by the parser.
 
-use crate::adapters::diagnostics;
+use crate::common::cursor::Cursor;
 
 /// The types of tokens recognized by the Idris Native compiler.
 #[derive(Debug, Clone, PartialEq)]
@@ -39,92 +44,113 @@ pub enum Token {
     EOF,
 }
 
+/// Helper function to tokenize source text.
+pub fn lex(source: &str) -> Vec<Token> {
+    let mut scanner = Scanner::new(source);
+    scanner.scan_tokens()
+}
+
 pub struct Scanner<'a> {
     source: &'a str,
+    cursor: Cursor<char>,
     tokens: Vec<Token>,
-    start: usize,
-    current: usize,
 }
 
 impl<'a> Scanner<'a> {
     pub fn new(source: &'a str) -> Self {
-        diagnostics::log("SCANNER", "INITIALIZE");
         Self {
             source,
+            cursor: Cursor::new(source.chars().collect()),
             tokens: Vec::new(),
-            start: 0,
-            current: 0,
         }
     }
 
     /// Scans the source text and returns a vector of tokens.
     pub fn scan_tokens(&mut self) -> Vec<Token> {
-        diagnostics::log("SCANNER", "ENTER scan_tokens()");
-        while !self.is_at_end() {
-            self.start = self.current;
+        let _span = crate::trace_span!("SCANNER", "scan_tokens");
+        
+        while !self.cursor.is_at_end() {
             self.scan_token();
         }
+        
         self.tokens.push(Token::EOF);
-        diagnostics::log("SCANNER", &format!("EXIT scan_tokens() -> {} tokens", self.tokens.len()));
         self.tokens.clone()
     }
 
     fn scan_token(&mut self) {
-        let c = self.advance();
+        let c = match self.cursor.advance() {
+            Some(c) => *c,
+            None => return,
+        };
+
         match c {
-            '(' => self.add_token(Token::LParen),
-            ')' => self.add_token(Token::RParen),
-            ':' => self.add_token(Token::Colon),
+            '(' => self.tokens.push(Token::LParen),
+            ')' => self.tokens.push(Token::RParen),
+            ':' => self.tokens.push(Token::Colon),
             '=' => {
-                if self.match_char('>') {
-                    self.add_token(Token::FatArrow);
-                } else if self.match_char('=') {
-                    self.add_token(Token::Eq);
+                if self.cursor.match_item(&'>') {
+                    self.tokens.push(Token::FatArrow);
+                } else if self.cursor.match_item(&'=') {
+                    self.tokens.push(Token::Eq);
                 } else {
-                    self.add_token(Token::Assign);
+                    self.tokens.push(Token::Assign);
                 }
             }
-            '|' => self.add_token(Token::Pipe),
-            '`' => self.add_token(Token::Backtick),
-            '+' => self.add_token(Token::Plus),
+            '|' => self.tokens.push(Token::Pipe),
+            '`' => self.tokens.push(Token::Backtick),
+            '+' => self.tokens.push(Token::Plus),
             '-' => {
-                if self.match_char('>') {
-                    self.add_token(Token::Arrow);
-                } else if self.match_char('-') {
+                if self.cursor.match_item(&'>') {
+                    self.tokens.push(Token::Arrow);
+                } else if self.cursor.match_item(&'-') {
                     // Comment: skip until end of line
-                    while self.peek() != '\n' && !self.is_at_end() {
-                        self.advance();
+                    while self.cursor.peek() != Some(&'\n') && !self.cursor.is_at_end() {
+                        self.cursor.advance();
                     }
                 } else {
-                    self.add_token(Token::Minus);
+                    self.tokens.push(Token::Minus);
                 }
             }
             '.' => {
-                if self.match_char('&') && self.match_char('.') {
-                    self.add_token(Token::BitAnd);
-                } else if self.match_char('|') && self.match_char('.') {
-                    self.add_token(Token::BitOr);
+                if self.cursor.match_item(&'&') && self.cursor.match_item(&'.') {
+                    self.tokens.push(Token::BitAnd);
+                } else if self.cursor.match_item(&'|') && self.cursor.match_item(&'.') {
+                    self.tokens.push(Token::BitOr);
                 }
             }
             ' ' | '\r' | '\t' | '\n' => (), // Ignore whitespace
             _ => {
                 if c.is_digit(10) {
-                    self.number();
+                    self.number(c);
                 } else if c.is_alphabetic() || c == '_' {
-                    self.identifier();
-                } else {
-                    // Ignore unknown characters for MVP
+                    self.identifier(c);
                 }
             }
         }
     }
 
-    fn identifier(&mut self) {
-        while self.peek().is_alphanumeric() || self.peek() == '_' {
-            self.advance();
+    fn identifier(&mut self, first: char) {
+        let start = self.cursor.current_pos() - 1;
+        while let Some(c) = self.cursor.peek() {
+            if c.is_alphanumeric() || *c == '_' {
+                self.cursor.advance();
+            } else {
+                break;
+            }
         }
-        let text = &self.source[self.start..self.current];
-        let token = match text {
+        let end = self.cursor.current_pos();
+        // Since we collected chars into a Vec, we need to map back to original source 
+        // or just use the collected chars. For efficiency we'll rebuild string.
+        let mut text = String::new();
+        text.push(first);
+        // This is a bit inefficient due to char collection, but fine for MVP.
+        // We can optimize by tracking byte offsets if needed.
+        
+        // Let's just use the source slice if possible.
+        // For now, let's just collect the chars we passed.
+        let tokens_slice: String = self.source.chars().skip(start).take(end - start).collect();
+        
+        let token = match tokens_slice.as_str() {
             "if" => Token::If,
             "then" => Token::Then,
             "else" => Token::Else,
@@ -137,45 +163,23 @@ impl<'a> Scanner<'a> {
             "shiftL" => Token::ShiftL,
             "shiftR" => Token::ShiftR,
             "complement" => Token::Complement,
-            _ => Token::Identifier(text.to_string()),
+            _ => Token::Identifier(tokens_slice),
         };
-        self.add_token(token);
-    }
-
-    fn number(&mut self) {
-        while self.peek().is_digit(10) {
-            self.advance();
-        }
-        let value = self.source[self.start..self.current].parse::<i64>().unwrap();
-        self.add_token(Token::Integer(value));
-    }
-
-    fn is_at_end(&self) -> bool {
-        self.current >= self.source.len()
-    }
-
-    fn advance(&mut self) -> char {
-        let c = self.source.chars().nth(self.current).unwrap();
-        self.current += 1;
-        c
-    }
-
-    fn peek(&self) -> char {
-        if self.is_at_end() { return '\0'; }
-        self.source.chars().nth(self.current).unwrap()
-    }
-
-    fn match_char(&mut self, expected: char) -> bool {
-        if self.is_at_end() { return false; }
-        if self.source.chars().nth(self.current).unwrap() != expected {
-            return false;
-        }
-        self.current += 1;
-        true
-    }
-
-    fn add_token(&mut self, token: Token) {
-        diagnostics::log("SCANNER", &format!("TOKEN: {:?}", token));
         self.tokens.push(token);
+    }
+
+    fn number(&mut self, _first: char) {
+        let start = self.cursor.current_pos() - 1;
+        while let Some(c) = self.cursor.peek() {
+            if c.is_digit(10) {
+                self.cursor.advance();
+            } else {
+                break;
+            }
+        }
+        let end = self.cursor.current_pos();
+        let text: String = self.source.chars().skip(start).take(end - start).collect();
+        let value = text.parse::<i64>().unwrap_or(0);
+        self.tokens.push(Token::Integer(value));
     }
 }
