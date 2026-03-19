@@ -7,8 +7,9 @@ use crate::domain::arena::Arena;
 use crate::adapters::syntax_parser::{lex, Parser};
 use crate::application::qtt_checker::QttChecker;
 use crate::adapters::diagnostics;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::path::{Path, PathBuf};
 
 /// An abstraction for the code generation and toolchain backend.
 pub trait Backend {
@@ -38,40 +39,24 @@ impl<'a> Compiler<'a> {
     pub fn compile_file(&self, filepath: &str) -> Result<String, String> {
         diagnostics::log("COMPILER", &format!("ENTER compile_file(filepath: {})", filepath));
 
-        let source = fs::read_to_string(filepath)
-            .map_err(|e| format!("Failed to read file: {}", e))?;
-        
         let output_path = format!("./{}_bin", filepath.replace(".idr", ""));
-        self.compile_str(&source, &output_path, filepath)
+        let declarations = self.load_program_from_file(filepath)?;
+        self.compile_declarations(&declarations, &output_path, filepath)
     }
 
     /// Executes the compilation pipeline for a string of Idris 2 source code.
     pub fn compile_str(&self, source: &str, output_path: &str, filename: &str) -> Result<String, String> {
         diagnostics::log("COMPILER", "ENTER compile_str");
 
-        // 1. Parse
-        let mut arena = Arena::new();
-        let tokens = match lex(source) {
-            Ok(t) => t,
-            Err(e) => {
-                diagnostics::report_error(&e, source, filename);
-                return Err("Lexing failed".to_string());
-            }
-        };
-        
-        let mut parser = Parser::new(tokens, &mut arena);
-        let declarations = match parser.parse_program() {
-            Ok(decls) => decls,
-            Err(e) => {
-                diagnostics::report_error(&e, source, filename);
-                return Err("Parsing failed".to_string());
-            }
-        };
-        
+        let declarations = self.load_program_from_source(source, filename)?;
+        self.compile_declarations(&declarations, output_path, filename)
+    }
+
+    fn compile_declarations(&self, declarations: &[Term], output_path: &str, _filename: &str) -> Result<String, String> {
         // 2. QTT Validation
         if self.qtt_enabled {
             let checker = QttChecker::new();
-            for decl in &declarations {
+            for decl in declarations {
                 if !checker.check_term(decl) {
                     let err = "QTT Structural Error: Boundary violation detected.".to_string();
                     diagnostics::log("COMPILER", &format!("ERROR: {}", err));
@@ -82,8 +67,8 @@ impl<'a> Compiler<'a> {
         }
 
         // 3. Lowering and Compilation
-        let ir = self.backend.lower_program(&declarations);
-        
+        let ir = self.backend.lower_program(declarations);
+
         diagnostics::log("COMPILER", "INVOKE backend.compile_to_binary");
         match self.backend.compile_to_binary(ir, output_path) {
             Ok(true) => {
@@ -96,6 +81,94 @@ impl<'a> Compiler<'a> {
                 Err(err)
             }
         }
+    }
+
+    fn load_program_from_file(&self, filepath: &str) -> Result<Vec<Term<'static>>, String> {
+        let path = Path::new(filepath);
+        let source = fs::read_to_string(path)
+            .map_err(|e| format!("Failed to read file: {}", e))?;
+
+        let mut visited = HashSet::new();
+        self.load_program_recursive(&source, path, &mut visited)
+    }
+
+    fn load_program_from_source(&self, source: &str, filename: &str) -> Result<Vec<Term<'static>>, String> {
+        let path = Path::new(filename);
+        let mut visited = HashSet::new();
+        self.load_program_recursive(source, path, &mut visited)
+    }
+
+    fn load_program_recursive(&self, source: &str, path: &Path, visited: &mut HashSet<PathBuf>) -> Result<Vec<Term<'static>>, String> {
+        let canonical = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        if !visited.insert(canonical) {
+            return Ok(Vec::new());
+        }
+
+        let declarations = self.parse_source(source, path.to_string_lossy().as_ref())?;
+        let mut resolved = Vec::new();
+
+        for decl in &declarations {
+            if let Term::Import(module_name) = decl {
+                if let Some(import_path) = self.resolve_import_path(module_name, path.parent()) {
+                    let import_source = fs::read_to_string(&import_path)
+                        .map_err(|e| format!("Failed to read import {}: {}", import_path.display(), e))?;
+                    let import_decls = self.load_program_recursive(&import_source, &import_path, visited)?;
+                    resolved.extend(import_decls);
+                }
+            }
+        }
+
+        resolved.extend(declarations);
+        Ok(resolved)
+    }
+
+    fn parse_source(&self, source: &str, filename: &str) -> Result<Vec<Term<'static>>, String> {
+        let arena = Box::leak(Box::new(Arena::new()));
+        let tokens = match lex(source) {
+            Ok(t) => t,
+            Err(e) => {
+                diagnostics::report_error(&e, source, filename);
+                return Err("Lexing failed".to_string());
+            }
+        };
+
+        let mut parser = Parser::new(tokens, arena);
+        match parser.parse_program() {
+            Ok(decls) => Ok(decls),
+            Err(e) => {
+                diagnostics::report_error(&e, source, filename);
+                Err("Parsing failed".to_string())
+            }
+        }
+    }
+
+    fn resolve_import_path(&self, module_name: &str, current_dir: Option<&Path>) -> Option<PathBuf> {
+        let relative_module_path = PathBuf::from(module_name.replace('.', "/")).with_extension("idr");
+        let module_file = PathBuf::from(format!("{}.idr", module_name));
+
+        let mut roots = Vec::new();
+        if let Some(dir) = current_dir {
+            roots.push(dir.to_path_buf());
+        }
+        roots.push(PathBuf::from("."));
+        roots.push(PathBuf::from("idris2_ref/libs/base"));
+        roots.push(PathBuf::from("idris2_ref/libs/contrib"));
+        roots.push(PathBuf::from("idris2_ref/libs/linear"));
+        roots.push(PathBuf::from("idris2_ref/libs/network"));
+        roots.push(PathBuf::from("idris2_ref/libs/prelude"));
+        roots.push(PathBuf::from("idris2_ref/samples"));
+        roots.push(PathBuf::from("idris2_ref/samples/FFI-readline/src"));
+
+        for root in roots {
+            let candidates = [root.join(&relative_module_path), root.join(&module_file)];
+            for candidate in candidates {
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+            }
+        }
+
+        None
     }
 }
 

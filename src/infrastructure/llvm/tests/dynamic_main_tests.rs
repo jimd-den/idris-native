@@ -18,8 +18,9 @@ fn test_lower_program_with_no_args() {
     
     let ir = backend.lower_program(&decls);
     
-    // main should call no_args() with no arguments
+    // A zero-arg fallback is safe to call when there is no explicit main.
     assert!(ir.contains("call i64 @\"no_args\"()"));
+    assert!(!ir.contains("call void @print_int"));
 }
 
 #[test]
@@ -33,6 +34,8 @@ fn test_lower_program_with_three_args() {
     
     let ir = backend.lower_program(&decls);
     
-    // main should call three_args(i64 2, i64 2, i64 2) 
-    assert!(ir.contains("call i64 @\"three_args\"(i64 2, i64 2, i64 2)"));
+    // The backend must not fabricate dummy arguments for a non-main function.
+    assert!(ir.contains("define i32 @main()"));
+    assert!(!ir.contains("@\"three_args\"(i64 2, i64 2, i64 2)"));
+    assert!(!ir.contains("call i64 @\"three_args\""));
 }

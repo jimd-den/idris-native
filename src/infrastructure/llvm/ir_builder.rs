@@ -4,7 +4,7 @@
 //! translating high-level `Term` nodes into LLVM IR instructions.
 
 use crate::domain::Term;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Represents the layout of a constructor in memory.
 #[derive(Debug, Clone)]
@@ -19,6 +19,7 @@ pub struct IRBuilder {
     pub function_definitions: std::collections::HashMap<String, String>,
     pub string_literals: std::collections::HashMap<String, String>,
     pub type_env: std::collections::HashMap<String, ConstructorLayout>,
+    pub known_functions: HashSet<String>,
     next_reg: usize,
     label_counter: usize,
     fn_counter: usize,
@@ -41,6 +42,7 @@ impl IRBuilder {
             function_definitions: std::collections::HashMap::new(),
             string_literals: std::collections::HashMap::new(),
             type_env,
+            known_functions: HashSet::new(),
             next_reg: 1,
             label_counter: 0,
             fn_counter: 0,
@@ -125,9 +127,58 @@ impl IRBuilder {
         s
     }
 
+    fn resolve_global_name(&self, name: &str) -> Option<String> {
+        let direct_match = self.known_functions.contains(name) || self.function_definitions.contains_key(&self.sanitize_id(name));
+        if direct_match {
+            return Some(format!("@{}", self.sanitize_id(name)));
+        }
+
+        if let Some((_, short_name)) = name.rsplit_once('.') {
+            let short_match = self.known_functions.contains(short_name)
+                || self.function_definitions.contains_key(&self.sanitize_id(short_name));
+            if short_match {
+                return Some(format!("@{}", self.sanitize_id(short_name)));
+            }
+        }
+
+        None
+    }
+
+    fn collect_app_chain<'a>(&self, term: &'a Term<'a>) -> (&'a Term<'a>, Vec<&'a Term<'a>>) {
+        let mut args = Vec::new();
+        let mut current = term;
+
+        while let Term::App(func, arg) = current {
+            args.push(*arg);
+            current = func;
+        }
+
+        args.reverse();
+        (current, args)
+    }
+
     /// Lowers a high-level term into LLVM IR.
     pub fn lower_term(&mut self, term: &Term, env: &HashMap<String, String>) -> String {
         let ty = String::from("i") + &self.bit_width.to_string();
+
+        if let Term::App(_, _) = term {
+            let (head, args) = self.collect_app_chain(term);
+            if args.len() > 1 {
+                if let Term::Var(name) = head {
+                    if let Some(global_name) = self.resolve_global_name(name) {
+                        let lowered_args: Vec<String> = args.iter().map(|arg| self.lower_term(arg, env)).collect();
+                        let res = self.new_reg();
+                        let call_args = lowered_args
+                            .into_iter()
+                            .map(|arg| format!("{} {}", ty, arg))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        self.instructions.push(format!("  {} = call {} {}({})\n", res, ty, global_name, call_args));
+                        return res;
+                    }
+                }
+            }
+        }
 
         match term {
             Term::Var(name) => {
@@ -137,6 +188,9 @@ impl IRBuilder {
                     let mut s = String::from("@");
                     s.push_str(name);
                     return s;
+                }
+                if name == "print" {
+                    return String::from("@print");
                 }
                 if let Some(layout) = self.type_env.get(name) {
                     if layout.field_count == 0 {
@@ -149,10 +203,8 @@ impl IRBuilder {
                         return s;
                     }
                 }
-                if self.function_definitions.contains_key(&self.sanitize_id(name)) {
-                    let mut s = String::from("@");
-                    s.push_str(&self.sanitize_id(name));
-                    return s;
+                if let Some(global_name) = self.resolve_global_name(name) {
+                    return global_name;
                 }
                 env.get(name).cloned().unwrap_or_else(|| {
                     let mut s = String::from("%");

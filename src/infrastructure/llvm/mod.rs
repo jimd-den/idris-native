@@ -176,6 +176,12 @@ convert:
   ret void
 }
 
+define i64 @print(i64 %n) {
+entry:
+    call void @print_int(i64 %n)
+    ret i64 %n
+}
+
 declare i32 @write(i32, i8*, i32)
 declare i64 @llvm.abs.i64(i64, i1)
 
@@ -213,6 +219,69 @@ impl Backend for LlvmBackend {
     fn lower_program(&self, declarations: &[Term]) -> String {
         let mut builder = IRBuilder::new();
         let env = HashMap::new();
+
+        fn register_function_names<'a>(decls: &[Term<'a>], builder: &mut IRBuilder) {
+            for decl in decls {
+                match decl {
+                    Term::Def(name, _, body) => {
+                        builder.known_functions.insert(name.clone());
+                        register_function_names_in_term(body, builder);
+                    }
+                    Term::Where(body, local_decls) => {
+                        register_function_names(local_decls, builder);
+                        register_function_names_in_term(body, builder);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        fn register_function_names_in_term<'a>(term: &Term<'a>, builder: &mut IRBuilder) {
+            match term {
+                Term::Where(body, local_decls) => {
+                    register_function_names(local_decls, builder);
+                    register_function_names_in_term(body, builder);
+                }
+                Term::Let(_, val, body) | Term::LetRec(_, val, body) => {
+                    register_function_names_in_term(val, builder);
+                    register_function_names_in_term(body, builder);
+                }
+                Term::Case(target, branches) => {
+                    register_function_names_in_term(target, builder);
+                    for (_, _, body) in branches {
+                        register_function_names_in_term(body, builder);
+                    }
+                }
+                Term::App(f, a) | Term::Add(f, a) | Term::Sub(f, a) | Term::Mul(f, a) |
+                Term::Div(f, a) | Term::Append(f, a) | Term::BitXor(f, a) | Term::BitAnd(f, a) |
+                Term::BitOr(f, a) | Term::Shl(f, a) | Term::Shr(f, a) | Term::Eq(f, a) |
+                Term::Lt(f, a) | Term::Gt(f, a) | Term::BufferLoad(f, a) => {
+                    register_function_names_in_term(f, builder);
+                    register_function_names_in_term(a, builder);
+                }
+                Term::If(c, t, e) => {
+                    register_function_names_in_term(c, builder);
+                    register_function_names_in_term(t, builder);
+                    register_function_names_in_term(e, builder);
+                }
+                Term::Lambda(_, _, body) => register_function_names_in_term(body, builder),
+                Term::Do(stmts) | Term::Mutual(stmts) | Term::Interface(_, _, stmts) |
+                Term::Implementation(_, _, stmts) => {
+                    for stmt in stmts {
+                        register_function_names_in_term(stmt, builder);
+                    }
+                }
+                Term::Bind(_, action) => register_function_names_in_term(action, builder),
+                Term::BufferStore(b, i, v) => {
+                    register_function_names_in_term(b, builder);
+                    register_function_names_in_term(i, builder);
+                    register_function_names_in_term(v, builder);
+                }
+                _ => {}
+            }
+        }
+
+        register_function_names(declarations, &mut builder);
         
         // Pre-pass: register all ADTs (including nested ones)
         fn register_adts<'a>(decls: &[Term<'a>], builder: &mut IRBuilder) {
@@ -264,20 +333,16 @@ impl Backend for LlvmBackend {
 
         register_adts(declarations, &mut builder);
 
-        let mut main_name = "main".to_string();
-        let mut main_args_count = 0;
+        let mut fallback_name: Option<String> = None;
         let mut main_defined = false;
 
         for decl in declarations {
             if let Term::Def(name, args, _) = decl {
                 builder.lower_term(decl, &env);
                 if name == "main" {
-                    main_name = name.clone();
-                    main_args_count = args.len();
                     main_defined = true;
-                } else if !main_defined && main_args_count == 0 {
-                    main_name = name.clone();
-                    main_args_count = args.len();
+                } else if fallback_name.is_none() && args.is_empty() {
+                    fallback_name = Some(name.clone());
                 }
             }
         }
@@ -302,20 +367,14 @@ impl Backend for LlvmBackend {
         }
 
 
-        // Add a main wrapper for the MVP to make it executable if main is not defined
+        // Add a conservative fallback main only when there is no explicit main.
         if !main_defined {
             ir.push_str("\ndefine i32 @main() {\n");
-            let mut call_args = String::new();
-            for _ in 0..main_args_count {
-                if !call_args.is_empty() { call_args.push_str(", "); }
-                call_args.push_str("i64 2");
+            if let Some(name) = fallback_name {
+                ir.push_str("  %res = call i64 @");
+                ir.push_str(&builder.sanitize_id(&name));
+                ir.push_str("()\n");
             }
-            ir.push_str("  %res = call i64 @");
-            ir.push_str(&builder.sanitize_id(&main_name));
-            ir.push_str("(");
-            ir.push_str(&call_args);
-            ir.push_str(")\n");
-            ir.push_str("  call void @print_int(i64 %res)\n");
             ir.push_str("  ret i32 0\n}\n");
         }
 
