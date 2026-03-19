@@ -33,7 +33,7 @@
     - [x] **Green:** Refactor `lower_program` to respect program signatures. Implement stub target switching for WASM/Bare-Metal.
 - [x] **Task: Conductor - User Manual Verification 'Phase 3' (Protocol in workflow.md)**
 
-## Phase 4: Idris 2 Language Expansion (Entities & Adapters)
+## Phase 4: Idris 2 Language Expansion (Entities & Adapters) [checkpoint: 997f1ba]
 - [x] **Task: Expand AST (`Term`) for Full Idris 2**
     - [x] **Red:** Write tests ensuring the AST can represent modules, imports, Data constructors, interfaces, records, strings, and floats.
     - [x] **Green:** Add required `Term` variants.
