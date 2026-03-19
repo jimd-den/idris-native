@@ -85,6 +85,17 @@ impl LlvmBackend {
     /// KISS-03: Multi-line raw string literal for boilerplate IR.
     fn get_print_int_ir(&self) -> String {
         r#"
+declare i32 @puts(i8*)
+declare i8* @getLine()
+define void @putStr(i8* %s) {
+  %void = call i32 @puts(i8* %s)
+  ret void
+}
+define void @putStrLn(i8* %s) {
+  %void = call i32 @puts(i8* %s)
+  ret void
+}
+
 define void @print_int(i64 %n) {
 entry:
   %is_zero = icmp eq i64 %n, 0
@@ -166,8 +177,8 @@ impl Backend for LlvmBackend {
         let mut main_args_count = 0;
 
         for decl in declarations {
-            builder.lower_term(decl, &env);
             if let Term::Def(name, args, _) = decl {
+                builder.lower_term(decl, &env);
                 if name == "main" || main_args_count == 0 {
                     main_name = name.clone();
                     main_args_count = args.len();

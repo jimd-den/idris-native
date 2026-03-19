@@ -57,11 +57,17 @@ impl IRBuilder {
 
     /// Lowers a high-level term into LLVM IR.
     pub fn lower_term(&mut self, term: &Term, env: &HashMap<String, String>) -> String {
-        let mut ty = String::from("i");
-        ty.push_str(&self.bit_width.to_string());
+        let ty = String::from("i") + &self.bit_width.to_string();
 
         match term {
             Term::Var(name) => {
+                if name == "True" { return String::from("1"); }
+                if name == "False" { return String::from("0"); }
+                if name == "putStr" || name == "putStrLn" || name == "getLine" || name == "print_int" {
+                    let mut s = String::from("@");
+                    s.push_str(name);
+                    return s;
+                }
                 env.get(name).cloned().unwrap_or_else(|| {
                     let mut s = String::from("%");
                     s.push_str(name);
@@ -70,12 +76,12 @@ impl IRBuilder {
             }
             Term::Integer(n) => n.to_string(),
             Term::Float(bits) => {
-                // Floating point constants in LLVM are often hex
-                format!("0x{:x}", bits)
+                let mut s = String::from("0x");
+                s.push_str(&format!("{:x}", bits));
+                s
             }
             Term::String(_s) => {
-                // Return pointer to global string literal (placeholder)
-                String::from("null")
+                String::from("0")
             }
             Term::Char(c) => {
                 (*c as u32).to_string()
@@ -209,30 +215,58 @@ impl IRBuilder {
                 let mut inner_builder = IRBuilder::new();
                 inner_builder.bit_width = self.bit_width;
                 let mut inner_env = env.clone();
-                inner_env.insert(name.clone(), format!("%{}", name));
+                let mut var_name = String::from("%");
+                var_name.push_str(name);
+                inner_env.insert(name.clone(), var_name);
                 
                 let res_reg = inner_builder.lower_term(body, &inner_env);
                 
-                let mut fn_def = format!("define {} @{}({} %{}) {{\n", ty, fn_name, ty, name);
+                let mut fn_def = String::from("define ");
+                fn_def.push_str(&ty); fn_def.push_str(" @"); fn_def.push_str(&fn_name);
+                fn_def.push_str("("); fn_def.push_str(&ty); fn_def.push_str(" %");
+                fn_def.push_str(name); fn_def.push_str(") {\n");
                 for instr in inner_builder.instructions {
                     fn_def.push_str(&instr);
-                    fn_def.push('\n');
                 }
-                fn_def.push_str(&format!("  ret {} {}\n}}\n", ty, res_reg));
+                fn_def.push_str("  ret "); fn_def.push_str(&ty); fn_def.push_str(" ");
+                fn_def.push_str(&res_reg); fn_def.push_str("\n}\n");
                 self.function_definitions.push(fn_def);
                 
                 let res = self.new_reg();
-                self.instructions.push(format!("  {} = ptrtoint {} ({} )* @{} to i64\n", res, ty, ty, fn_name));
+                let mut ptrtoint = String::from("  ");
+                ptrtoint.push_str(&res); ptrtoint.push_str(" = ptrtoint "); ptrtoint.push_str(&ty);
+                ptrtoint.push_str(" ("); ptrtoint.push_str(&ty); ptrtoint.push_str(")* @");
+                ptrtoint.push_str(&fn_name); ptrtoint.push_str(" to i64\n");
+                self.instructions.push(ptrtoint);
                 res
             }
             
             Term::App(f, a) => {
                 let fv = self.lower_term(f, env);
                 let av = self.lower_term(a, env);
+                
+                if fv.starts_with("@") {
+                    let res = self.new_reg();
+                    let mut instr = String::from("  ");
+                    instr.push_str(&res); instr.push_str(" = call "); instr.push_str(&ty);
+                    instr.push_str(" "); instr.push_str(&fv); instr.push_str("(");
+                    instr.push_str(&ty); instr.push_str(" "); instr.push_str(&av); instr.push_str(")\n");
+                    self.instructions.push(instr);
+                    return res;
+                }
+
                 let fn_ptr = self.new_reg();
-                self.instructions.push(format!("  {} = inttoptr {} {} to {} ({} )*\n", fn_ptr, ty, fv, ty, ty));
+                let mut cast = String::from("  ");
+                cast.push_str(&fn_ptr); cast.push_str(" = inttoptr "); cast.push_str(&ty);
+                cast.push_str(" "); cast.push_str(&fv); cast.push_str(" to "); cast.push_str(&ty);
+                cast.push_str(" ("); cast.push_str(&ty); cast.push_str(" )*\n");
+                self.instructions.push(cast);
                 let res = self.new_reg();
-                self.instructions.push(format!("  {} = call {} {}({} {}\n", res, ty, fn_ptr, ty, av));
+                let mut call = String::from("  ");
+                call.push_str(&res); call.push_str(" = call "); call.push_str(&ty);
+                call.push_str(" "); call.push_str(&fn_ptr); call.push_str("(");
+                call.push_str(&ty); call.push_str(" "); call.push_str(&av); call.push_str(")\n");
+                self.instructions.push(call);
                 res
             }
             
@@ -245,7 +279,7 @@ impl IRBuilder {
             
             Term::LetRec(name, val, body) => {
                 let mut rec_env = env.clone();
-                rec_env.insert(name.clone(), "0".to_string()); 
+                rec_env.insert(name.clone(), String::from("0")); 
                 let v = self.lower_term(val, &rec_env);
                 let mut final_env = env.clone();
                 final_env.insert(name.clone(), v);
@@ -254,7 +288,7 @@ impl IRBuilder {
             
             Term::Case(target, branches) => {
                 let val = self.lower_term(target, env);
-                if branches.is_empty() { return "0".to_string(); }
+                if branches.is_empty() { return String::from("0"); }
 
                 let mut labels = Vec::new();
                 let mut vals = Vec::new();
@@ -287,29 +321,62 @@ impl IRBuilder {
                 if vals.len() >= 2 {
                     self.instructions.push(format!("  {} = phi {} [ {}, %{} ], [ {}, %{} ]\n", phi_res, ty, vals[0], labels[0], vals[1], labels[1]));
                 } else {
-                    self.instructions.push(format!("  {} = phi {} [ {}, %{} ]\n", phi_res, ty, vals.get(0).unwrap_or(&"0".to_string()), labels.get(0).unwrap_or(&"somewhere".to_string())));
+                    self.instructions.push(format!("  {} = phi {} [ {}, %{} ]\n", phi_res, ty, vals.get(0).unwrap_or(&String::from("0")), labels.get(0).unwrap_or(&String::from("somewhere"))));
                 }
                 phi_res
             }
 
             Term::Do(stmts) => {
+                let mut current_env = env.clone();
                 let mut last_res = "0".to_string();
                 for stmt in stmts {
-                    last_res = self.lower_term(stmt, env);
+                    match stmt {
+                        Term::Bind(name, action) => {
+                            let res = self.lower_term(action, &current_env);
+                            current_env.insert(name.clone(), res.clone());
+                            last_res = res;
+                        }
+                        _ => {
+                            last_res = self.lower_term(stmt, &current_env);
+                        }
+                    }
                 }
                 last_res
             }
             Term::Bind(name, action) => {
-                let res = self.lower_term(action, env);
-                // In a real impl, we'd bind name to the result of action.
-                // For now, return the result.
-                res
+                self.lower_term(action, env)
             }
             
             Term::Pi(_, _, _, _) | Term::IntegerType | Term::FloatType | Term::StringType | Term::CharType |
             Term::I32Type | Term::I8Type | Term::Bits64Type | Term::IOType | Term::TypeType |
-            Term::Universe(_) => ty,
+            Term::Universe(_) => {
+                String::from("0")
+            }
 
+            Term::Def(name, args, body) => {
+                let mut arg_str = String::new();
+                let mut inner_env = env.clone();
+                for arg in args {
+                    if !arg_str.is_empty() { arg_str.push_str(", "); }
+                    arg_str.push_str(&ty); arg_str.push_str(" %"); arg_str.push_str(arg);
+                    let mut val_name = String::from("%");
+                    val_name.push_str(arg);
+                    inner_env.insert(arg.clone(), val_name);
+                }
+                
+                let res_reg = self.lower_term(body, &inner_env);
+                let mut fn_def = String::from("define ");
+                fn_def.push_str(&ty); fn_def.push_str(" @"); fn_def.push_str(name);
+                fn_def.push_str("("); fn_def.push_str(&arg_str); fn_def.push_str(") {\n");
+                for instr in self.instructions.drain(..) {
+                    fn_def.push_str(&instr);
+                }
+                fn_def.push_str("  ret "); fn_def.push_str(&ty); fn_def.push_str(" ");
+                fn_def.push_str(&res_reg); fn_def.push_str("\n}\n");
+                self.function_definitions.push(fn_def);
+                String::from("void")
+            }
+            
             Term::Module(_) | Term::Import(_) | Term::Data(_, _, _) | Term::Interface(_, _, _) |
             Term::Implementation(_, _, _) | Term::Record(_, _) | Term::Mutual(_) => {
                 "void".to_string()
@@ -322,28 +389,6 @@ impl IRBuilder {
                 self.lower_term(t, env)
             }
 
-            Term::Def(name, args, body) => {
-                let mut arg_str = String::new();
-                let mut inner_env = env.clone();
-                for arg in args {
-                    if !arg_str.is_empty() { arg_str.push_str(", "); }
-                    arg_str.push_str(&ty); arg_str.push_str(" %"); arg_str.push_str(arg);
-                    inner_env.insert(arg.clone(), String::from("%") + arg);
-                }
-                
-                let res_reg = self.lower_term(body, &inner_env);
-                let mut fn_def = String::from("define ");
-                fn_def.push_str(&ty); fn_def.push_str(" @"); fn_def.push_str(name);
-                fn_def.push_str("("); fn_def.push_str(&arg_str); fn_def.push_str(") {\n");
-                for instr in self.instructions.drain(..) {
-                    fn_def.push_str(&instr);
-                    fn_def.push('\n');
-                }
-                fn_def.push_str("  ret "); fn_def.push_str(&ty); fn_def.push_str(" ");
-                fn_def.push_str(&res_reg); fn_def.push_str("\n}\n");
-                self.function_definitions.push(fn_def);
-                String::from("void")
-            }
             Term::Buffer(size) => {
                 let res = self.new_reg();
                 self.instructions.push(format!("  {} = alloca [{} x {}]\n", res, size, ty));

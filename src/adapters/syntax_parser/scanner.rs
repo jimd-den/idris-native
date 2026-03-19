@@ -22,6 +22,7 @@ pub enum Token {
     Assign,      // =
     Arrow,       // ->
     FatArrow,    // =>
+    Bind,        // <-
     Colon,       // :
     Pipe,        // |
     LParen,      // (
@@ -29,9 +30,20 @@ pub enum Token {
     Backtick,    // `
     LBrace,      // {
     RBrace,      // }
+    LBracket,    // [
+    RBracket,    // ]
     Semi,        // ;
     Comma,       // ,
     Dot,         // .
+    Append,      // ++
+    Newline,     // \n
+    Question,    // ?
+    Backslash,   // \
+    Dollar,      // $
+    DoubleStar,  // **
+    Hash,        // #
+    Underscore,  // _ (standalone, not part of identifier)
+    At,          // @
     
     // Operators
     Eq,          // ==
@@ -117,9 +129,16 @@ impl<'a> Scanner<'a> {
             ')' => self.add_token(Token::RParen, 1),
             '{' => self.add_token(Token::LBrace, 1),
             '}' => self.add_token(Token::RBrace, 1),
+            '[' => self.add_token(Token::LBracket, 1),
+            ']' => self.add_token(Token::RBracket, 1),
             ';' => self.add_token(Token::Semi, 1),
             ',' => self.add_token(Token::Comma, 1),
             ':' => self.add_token(Token::Colon, 1),
+            '?' => self.add_token(Token::Question, 1),
+            '\\' => self.add_token(Token::Backslash, 1),
+            '$' => self.add_token(Token::Dollar, 1),
+            '#' => self.add_token(Token::Hash, 1),
+            '@' => self.add_token(Token::At, 1),
             '=' => {
                 if self.cursor.match_item(&'>') {
                     self.col += 1;
@@ -140,7 +159,14 @@ impl<'a> Scanner<'a> {
                 }
             }
             '`' => self.add_token(Token::Backtick, 1),
-            '+' => self.add_token(Token::Plus, 1),
+            '+' => {
+                if self.cursor.match_item(&'+') {
+                    self.col += 1;
+                    self.add_token(Token::Append, 2);
+                } else {
+                    self.add_token(Token::Plus, 1);
+                }
+            }
             '-' => {
                 if self.cursor.match_item(&'>') {
                     self.col += 1;
@@ -153,9 +179,23 @@ impl<'a> Scanner<'a> {
                     self.add_token(Token::Minus, 1);
                 }
             }
-            '*' => self.add_token(Token::Star, 1),
+            '*' => {
+                if self.cursor.match_item(&'*') {
+                    self.col += 1;
+                    self.add_token(Token::DoubleStar, 2);
+                } else {
+                    self.add_token(Token::Star, 1);
+                }
+            }
             '/' => self.add_token(Token::Slash, 1),
-            '<' => self.add_token(Token::Lt, 1),
+            '<' => {
+                if self.cursor.match_item(&'-') {
+                    self.col += 1;
+                    self.add_token(Token::Bind, 2);
+                } else {
+                    self.add_token(Token::Lt, 1);
+                }
+            }
             '>' => self.add_token(Token::Gt, 1),
             '.' => {
                 if self.cursor.match_item(&'&') && self.cursor.match_item(&'.') {
@@ -169,8 +209,32 @@ impl<'a> Scanner<'a> {
                 }
             }
             '"' => self.string()?,
-            '\'' => self.character()?,
-            ' ' | '\r' | '\t' | '\n' => (),
+            '\'' => {
+                // Disambiguate: char literal 'c' vs standalone tick
+                // A char literal requires exactly one char followed by closing '
+                if let Some(&next_ch) = self.cursor.peek() {
+                    if let Some(&after) = self.cursor.peek_at(1) {
+                        if after == '\'' && next_ch != '\'' {
+                            // Pattern: 'c' — this is a character literal
+                            self.character()?;
+                        } else {
+                            // Not a char literal; treat ' as an identifier char
+                            // (e.g., standalone prime, or start of multi-char sequence)
+                            self.add_token(Token::Identifier("'".to_string()), 1);
+                        }
+                    } else {
+                        self.add_token(Token::Identifier("'".to_string()), 1);
+                    }
+                } else {
+                    self.add_token(Token::Identifier("'".to_string()), 1);
+                }
+            }
+            ' ' | '\r' | '\t' => {
+                // Whitespace is insignificant; just advance column tracking
+            }
+            '\n' => {
+                self.add_token(Token::Newline, 1);
+            }
             _ => {
                 if c.is_digit(10) {
                     self.number(c);
@@ -233,7 +297,9 @@ impl<'a> Scanner<'a> {
     fn identifier(&mut self, first: char) {
         let mut text = String::from(first);
         while let Some(&c) = self.cursor.peek() {
-            if c.is_alphanumeric() || c == '_' || c == '.' {
+            // Idris 2 allows alphanumeric, underscore, dot (qualified names),
+            // and prime/tick (e.g., `show'`, `xs'`, `d''`) in identifiers.
+            if c.is_alphanumeric() || c == '_' || c == '.' || c == '\'' {
                 text.push(c);
                 self.advance();
             } else {

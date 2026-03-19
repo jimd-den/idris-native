@@ -21,8 +21,10 @@ pub fn compile_ir_to_binary(ir: String, output_path: &str) -> io::Result<bool> {
         .arg(output_path)
         .status()?;
     
-    // 3. Cleanup temporary IR file
-    let _ = fs::remove_file(ir_path);
+    // 3. Cleanup temporary IR file if successful
+    if status.success() {
+        let _ = fs::remove_file(ir_path);
+    }
     
     Ok(status.success())
 }

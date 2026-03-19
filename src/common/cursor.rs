@@ -36,6 +36,13 @@ impl<T: PartialEq> Cursor<T> {
         self.items.get(self.current + 1)
     }
 
+    /// Returns the item at `current + offset` without advancing.
+    /// Enables multi-token lookahead for disambiguating declarations
+    /// (e.g., distinguishing a signature `name : Type` from a definition `name args = body`).
+    pub fn peek_at(&self, offset: usize) -> Option<&T> {
+        self.items.get(self.current + offset)
+    }
+
     /// Advances the cursor and returns the item that was just passed.
     pub fn advance(&mut self) -> Option<&T> {
         if !self.is_at_end() {

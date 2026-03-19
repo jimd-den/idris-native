@@ -7,6 +7,8 @@
 //! These tests verify that the `repl_session` adapter correctly 
 //! orchestrates the compiler frontend to provide a functional REPL.
 
+pub mod real_eval_tests;
+
 use super::ReplSession;
 
 #[test]

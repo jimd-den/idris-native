@@ -9,6 +9,9 @@
 
 pub mod scanner;
 pub mod parser;
+pub mod expression_parser;
+pub mod type_parser;
+pub mod declaration_parser;
 
 pub use scanner::{Scanner, Token};
 pub use parser::Parser;
@@ -26,4 +29,5 @@ mod tests {
     pub mod error_tests;
     pub mod qtt_syntax_tests;
     pub mod full_lang_tests;
+    pub mod sample_parse_tests;
 }

@@ -43,10 +43,10 @@
 - [ ] **Task: Conductor - User Manual Verification 'Phase 4' (Protocol in workflow.md)**
 
 ## Phase 5: REPL Integration & Reference Verification (C)
-- [ ] **Task: Wire `ReplSession::eval` to Compiler**
-    - [ ] **Red:** Write tests ensuring the REPL executes logic instead of mock string matching.
-    - [ ] **Green:** Refactor `ReplSession` to invoke the `Evaluator` / `Compiler`.
-- [ ] **Task: Execute Reference Examples in Non-QTT Mode**
+- [x] **Task: Wire `ReplSession::eval` to Compiler**
+    - [x] **Red:** Write tests ensuring the REPL executes logic instead of mock string matching.
+    - [x] **Green:** Refactor `ReplSession` to invoke the `Evaluator` / `Compiler`.
+- [~] **Task: Execute Reference Examples in Non-QTT Mode**
     - [ ] **Red:** Create a test runner script that targets `idris2_ref/samples/` using the `--no-qtt` flag.
     - [ ] **Green:** Fix remaining compiler/lowering gaps until the selected standard samples compile and execute cleanly.
 - [ ] **Task: Conductor - User Manual Verification 'Phase 5' (Protocol in workflow.md)**
