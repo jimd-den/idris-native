@@ -8,9 +8,9 @@
 //! handles the `wasm32-unknown-unknown` target triple and generates 
 //! appropriate IR.
 
-use super::LlvmBackend;
+use super::super::LlvmBackend;
 
-// #[test]
+#[test]
 fn test_wasm_target_configuration() {
     let mut backend = LlvmBackend::new();
     backend.set_target("wasm32-unknown-unknown");
@@ -18,7 +18,7 @@ fn test_wasm_target_configuration() {
     assert_eq!(backend.get_target(), "wasm32-unknown-unknown");
 }
 
-// #[test]
+#[test]
 fn test_wasm_print_ir_generation() {
     let mut backend = LlvmBackend::new();
     backend.set_target("wasm32-unknown-unknown");

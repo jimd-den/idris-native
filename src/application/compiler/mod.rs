@@ -110,10 +110,6 @@ impl<'a> Compiler<'a> {
 #[cfg(test)]
 mod tests {
     pub mod string_input_tests;
-}
-
-#[cfg(feature = "broken_tests")]
-mod broken_tests {
     pub mod buffer_lowering_tests;
     pub mod sha256_lowering_tests;
 }

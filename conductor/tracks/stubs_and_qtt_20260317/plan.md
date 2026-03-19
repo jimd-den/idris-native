@@ -22,16 +22,16 @@
 - [x] **Task: Conductor - User Manual Verification 'Phase 2' (Protocol in workflow.md)**
 
 ## Phase 3: Backend Stubs & Missing Targets (A, B, E, I)
-- [ ] **Task: Implement Missing `LlvmBackend` Methods**
-    - [ ] **Red:** Uncomment and fix `tests_broken.rs` for `gen_integer_ir`, `gen_print_ir`, `set_target`, etc.
-    - [ ] **Green:** Implement the missing methods in `LlvmBackend` and `IRBuilder::set_bit_width`.
-- [ ] **Task: Handle All `Term` Variants in Lowering**
-    - [ ] **Red:** Write tests passing `Lambda`, `Pi`, `LetRec` to `lower_term` expecting valid IR or safe placeholders, not panics.
-    - [ ] **Green:** Implement exhaustive pattern matching in `IRBuilder::lower_term`.
-- [ ] **Task: Dynamic `main()` arguments & Target Triples**
-    - [ ] **Red:** Write tests checking `lower_program` generates dynamic `main()` calls instead of hardcoded `(2, 2)`.
-    - [ ] **Green:** Refactor `lower_program` to respect program signatures. Implement stub target switching for WASM/Bare-Metal.
-- [ ] **Task: Conductor - User Manual Verification 'Phase 3' (Protocol in workflow.md)**
+- [x] **Task: Implement Missing `LlvmBackend` Methods**
+    - [x] **Red:** Uncomment and fix `tests_broken.rs` for `gen_integer_ir`, `gen_print_ir`, `set_target`, etc.
+    - [x] **Green:** Implement the missing methods in `LlvmBackend` and `IRBuilder::set_bit_width`.
+- [x] **Task: Handle All `Term` Variants in Lowering**
+    - [x] **Red:** Write tests passing `Lambda`, `Pi`, `LetRec` to `lower_term` expecting valid IR or safe placeholders, not panics.
+    - [x] **Green:** Implement exhaustive pattern matching in `IRBuilder::lower_term`.
+- [x] **Task: Dynamic `main()` arguments & Target Triples**
+    - [x] **Red:** Write tests checking `lower_program` generates dynamic `main()` calls instead of hardcoded `(2, 2)`.
+    - [x] **Green:** Refactor `lower_program` to respect program signatures. Implement stub target switching for WASM/Bare-Metal.
+- [x] **Task: Conductor - User Manual Verification 'Phase 3' (Protocol in workflow.md)**
 
 ## Phase 4: Idris 2 Language Expansion (Entities & Adapters)
 - [ ] **Task: Expand AST (`Term`) for Full Idris 2**

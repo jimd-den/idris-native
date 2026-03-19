@@ -7,7 +7,7 @@ use crate::domain::{Term, arena::Arena};
 use crate::infrastructure::llvm::IRBuilder;
 use std::collections::HashMap;
 
-// #[test]
+#[test]
 fn test_lower_bitwise_xor() {
     let mut arena: Arena<Term> = Arena::new();
     let mut builder = IRBuilder::new();
@@ -26,7 +26,7 @@ fn test_lower_bitwise_xor() {
     }
 }
 
-// #[test]
+#[test]
 fn test_lower_bitwise_and() {
     let mut arena: Arena<Term> = Arena::new();
     let mut builder = IRBuilder::new();
@@ -43,7 +43,7 @@ fn test_lower_bitwise_and() {
     }
 }
 
-// #[test]
+#[test]
 fn test_lower_bitwise_or() {
     let mut arena: Arena<Term> = Arena::new();
     let mut builder = IRBuilder::new();
@@ -60,7 +60,7 @@ fn test_lower_bitwise_or() {
     }
 }
 
-// #[test]
+#[test]
 fn test_lower_bitwise_not() {
     let mut arena: Arena<Term> = Arena::new();
     let mut builder = IRBuilder::new();
@@ -77,7 +77,7 @@ fn test_lower_bitwise_not() {
     }
 }
 
-// #[test]
+#[test]
 fn test_lower_shl() {
     let mut arena: Arena<Term> = Arena::new();
     let mut builder = IRBuilder::new();
@@ -94,7 +94,7 @@ fn test_lower_shl() {
     }
 }
 
-// #[test]
+#[test]
 fn test_lower_shr() {
     let mut arena: Arena<Term> = Arena::new();
     let mut builder = IRBuilder::new();
@@ -112,7 +112,7 @@ fn test_lower_shr() {
     }
 }
 
-// #[test]
+#[test]
 fn test_lower_i32_addition() {
     let mut arena: Arena<Term> = Arena::new();
     let mut builder = IRBuilder::new();
@@ -133,7 +133,7 @@ fn test_lower_i32_addition() {
     }
 }
 
-// #[test]
+#[test]
 fn test_lower_i8_subtraction() {
     let mut arena: Arena<Term> = Arena::new();
     let mut builder = IRBuilder::new();
@@ -152,7 +152,7 @@ fn test_lower_i8_subtraction() {
     }
 }
 
-// #[test]
+#[test]
 fn test_lower_case_expression() {
     let mut arena: Arena<Term> = Arena::new();
     let mut builder = IRBuilder::new();
@@ -180,7 +180,7 @@ fn test_lower_case_expression() {
     }
 }
 
-// #[test]
+#[test]
 fn test_lower_bits64_type() {
     let mut arena: Arena<Term> = Arena::new();
     let mut builder = IRBuilder::new();
@@ -196,7 +196,7 @@ fn test_lower_bits64_type() {
     }
 }
 
-// #[test]
+#[test]
 fn test_lower_io_action() {
     let mut arena: Arena<Term> = Arena::new();
     let mut builder = IRBuilder::new();

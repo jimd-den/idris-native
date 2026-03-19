@@ -1,28 +1,21 @@
 //! # LLVM Backend (Infrastructure)
 //!
 //! This module implements the LLVM backend for the Idris Native compiler.
-//!
-//! # Strategic Architecture
-//! As an Infrastructure component, the `LlvmBackend` is responsible for 
-//! translating our high-level IR into native machine code using the 
-//! LLVM toolchain. It is the only module that knows about LLVM IR syntax.
-//!
-//! # Performance
-//! By generating LLVM IR, we leverage decades of industrial-strength 
-//! optimization (LTO, vectorization, etc.), allowing Idris 2 code 
-//! to reach performance parity with C and C++.
 
 pub mod ir_builder;
 pub mod toolchain;
 
+pub use ir_builder::IRBuilder;
 use crate::application::compiler::Backend;
 use crate::domain::Term;
-use crate::infrastructure::llvm::ir_builder::IRBuilder;
+use crate::domain::multiplicity::Multiplicity;
 use std::collections::HashMap;
 use std::io;
+use std::fs;
 
 pub struct LlvmBackend {
     target_triple: String,
+    opt_level: u32,
 }
 
 impl LlvmBackend {
@@ -30,7 +23,63 @@ impl LlvmBackend {
     pub fn new() -> Self {
         Self {
             target_triple: "x86_64-pc-linux-gnu".to_string(),
+            opt_level: 0,
         }
+    }
+
+    /// Sets the optimization level for the backend.
+    pub fn set_opt_level(&mut self, level: u32) {
+        self.opt_level = level;
+    }
+
+    /// Returns the current optimization level.
+    pub fn get_opt_level(&self) -> u32 {
+        self.opt_level
+    }
+
+    /// Sets the target triple for the backend.
+    pub fn set_target(&mut self, target: &str) {
+        self.target_triple = target.to_string();
+    }
+
+    /// Returns the current target triple.
+    pub fn get_target(&self) -> String {
+        self.target_triple.clone()
+    }
+
+    /// Generates IR for an integer literal.
+    pub fn gen_integer_ir(&self, val: i64) -> String {
+        format!("i64 {}", val)
+    }
+
+    /// Generates IR for deallocating a resource based on its multiplicity.
+    pub fn gen_dealloc_ir(&self, mult: Multiplicity) -> String {
+        match mult {
+            Multiplicity::One => "  call void @free(i8* %ptr)\n".to_string(),
+            _ => String::new(),
+        }
+    }
+
+    /// Generates IR for a print statement based on target triple.
+    pub fn gen_print_ir(&self, msg: &str) -> (String, String) {
+        if self.target_triple.contains("wasm32") {
+            let decl = "declare void @__wasm_print(i8*)".to_string();
+            let body = format!("  call void @__wasm_print(i8* getelementptr inbounds ([{} x i8], [{} x i8]* @.str, i64 0, i64 0))", msg.len() + 1, msg.len() + 1);
+            (decl, body)
+        } else if self.target_triple.contains("arm") || self.target_triple.contains("aarch64") {
+            let decl = "declare void @__bare_metal_print(i8*)".to_string();
+            let body = format!("  call void @__bare_metal_print(i8* getelementptr inbounds ([{} x i8], [{} x i8]* @.str, i64 0, i64 0))", msg.len() + 1, msg.len() + 1);
+            (decl, body)
+        } else {
+            let decl = "declare i32 @puts(i8*)".to_string();
+            let body = format!("  call i32 @puts(i8* getelementptr inbounds ([{} x i8], [{} x i8]* @.str, i64 0, i64 0))", msg.len() + 1, msg.len() + 1);
+            (decl, body)
+        }
+    }
+
+    /// Emits the module IR to a file.
+    pub fn emit_to_file(&self, ir: &str, path: &str) -> io::Result<()> {
+        fs::write(path, ir)
     }
 
     /// KISS-03: Multi-line raw string literal for boilerplate IR.
@@ -118,7 +167,9 @@ impl Backend for LlvmBackend {
             if i > 0 { arg_str.push_str(", "); }
             arg_str.push_str("i64 %");
             arg_str.push_str(arg);
-            env.insert(arg.clone(), format!("%{}", arg));
+            let mut val_name = String::from("%");
+            val_name.push_str(arg);
+            env.insert(arg.clone(), val_name);
         }
 
         let res_reg = builder.lower_term(body, &env);
@@ -129,6 +180,11 @@ impl Backend for LlvmBackend {
         ir.push_str("\"\n");
         ir.push_str(&self.get_print_int_ir());
         
+        for def in &builder.function_definitions {
+            ir.push_str(def);
+            ir.push('\n');
+        }
+
         ir.push_str("\ndefine i64 @");
         ir.push_str(name);
         ir.push_str("(");
@@ -145,11 +201,10 @@ impl Backend for LlvmBackend {
 
         // Add a main wrapper for the MVP to make it executable
         ir.push_str("\ndefine i32 @main() {\n");
-        // For MVP, we call the function with default args if any
         let mut call_args = String::new();
-        for i in 0..args.len() {
-            if i > 0 { call_args.push_str(", "); }
-            call_args.push_str("i64 2"); // Default to 2 for things like ack(2,2)
+        for _ in 0..args.len() {
+            if !call_args.is_empty() { call_args.push_str(", "); }
+            call_args.push_str("i64 2");
         }
         ir.push_str("  %res = call i64 @");
         ir.push_str(name);
@@ -172,13 +227,12 @@ impl Backend for LlvmBackend {
 mod tests {
     pub mod robustness_tests;
     pub mod ir_builder_tests;
+    pub mod tests_restored;
+    pub mod all_variants_tests;
+    pub mod dynamic_main_tests;
+    pub mod wasm_tests;
+    pub mod bare_metal_tests;
 }
 
-#[cfg(feature = "broken_tests")]
-mod tests_broken;
-#[cfg(feature = "broken_tests")]
-mod wasm_tests;
-#[cfg(feature = "broken_tests")]
-mod bare_metal_tests;
 #[cfg(feature = "broken_tests")]
 mod module_tests;
