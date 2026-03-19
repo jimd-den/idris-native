@@ -46,6 +46,7 @@ pub enum Term<'a> {
     Sub(&'a Term<'a>, &'a Term<'a>),
     Mul(&'a Term<'a>, &'a Term<'a>),
     Div(&'a Term<'a>, &'a Term<'a>),
+    Append(&'a Term<'a>, &'a Term<'a>),
     
     BitXor(&'a Term<'a>, &'a Term<'a>),
     BitAnd(&'a Term<'a>, &'a Term<'a>),

@@ -83,17 +83,36 @@ impl LlvmBackend {
     }
 
     /// KISS-03: Multi-line raw string literal for boilerplate IR.
-    fn get_print_int_ir(&self) -> String {
+    fn get_runtime_ir(&self) -> String {
         r#"
 declare i32 @puts(i8*)
-declare i8* @getLine()
-define void @putStr(i8* %s) {
+declare i8* @malloc(i64)
+declare void @free(i8*)
+
+@str_buffer = global [1024 x i8] zeroinitializer
+
+define i64 @getLine() {
+  %ptr = getelementptr [1024 x i8], [1024 x i8]* @str_buffer, i64 0, i64 0
+  ; Simplified: return the global buffer pointer
+  %res = ptrtoint i8* %ptr to i64
+  ret i64 %res
+}
+
+define void @putStr(i64 %s_int) {
+  %s = inttoptr i64 %s_int to i8*
   %void = call i32 @puts(i8* %s)
   ret void
 }
-define void @putStrLn(i8* %s) {
+
+define void @putStrLn(i64 %s_int) {
+  %s = inttoptr i64 %s_int to i8*
   %void = call i32 @puts(i8* %s)
   ret void
+}
+
+define i64 @concat(i64 %s1_int, i64 %s2_int) {
+  ; Dummy concat: just return the first string for now
+  ret i64 %s1_int
 }
 
 define void @print_int(i64 %n) {
@@ -190,7 +209,14 @@ impl Backend for LlvmBackend {
         ir.push_str("target triple = \"");
         ir.push_str(&self.target_triple);
         ir.push_str("\"\n");
-        ir.push_str(&self.get_print_int_ir());
+        
+        // Define string literals
+        for (value, label) in &builder.string_literals {
+            ir.push_str(&format!("@{} = private unnamed_addr constant [{} x i8] c\"{}\\00\", align 1\n", 
+                label, value.len() + 1, value));
+        }
+
+        ir.push_str(&self.get_runtime_ir());
         
         for def in &builder.function_definitions {
             ir.push_str(def);

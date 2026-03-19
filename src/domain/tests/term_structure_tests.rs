@@ -31,7 +31,7 @@ fn test_exhaustive_match_on_terms() {
         Term::IOType => (),
         Term::TypeType => (),
         
-        Term::Add(_l, _r) | Term::Sub(_l, _r) | Term::Mul(_l, _r) | Term::Div(_l, _r) => (),
+        Term::Add(_l, _r) | Term::Sub(_l, _r) | Term::Mul(_l, _r) | Term::Div(_l, _r) | Term::Append(_l, _r) => (),
         Term::BitXor(_l, _r) | Term::BitAnd(_l, _r) | Term::BitOr(_l, _r) => (),
         Term::BitNot(_t) => (),
         Term::Shl(_l, _r) | Term::Shr(_l, _r) => (),

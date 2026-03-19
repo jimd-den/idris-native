@@ -21,6 +21,7 @@ impl QttChecker {
         match term {
             Term::Add(lhs, rhs) | Term::Sub(lhs, rhs) | Term::Mul(lhs, rhs) | Term::Div(lhs, rhs) |
             Term::Eq(lhs, rhs) | Term::Lt(lhs, rhs) | Term::Gt(lhs, rhs) | Term::App(lhs, rhs) |
+            Term::Append(lhs, rhs) |
             Term::BitXor(lhs, rhs) | Term::BitAnd(lhs, rhs) | Term::BitOr(lhs, rhs) |
             Term::Shl(lhs, rhs) | Term::Shr(lhs, rhs) => {
                 self.check_term(lhs) && self.check_term(rhs)
@@ -124,6 +125,7 @@ impl QttChecker {
             
             Term::Add(l, r) | Term::Sub(l, r) | Term::Mul(l, r) | Term::Div(l, r) |
             Term::Eq(l, r) | Term::Lt(l, r) | Term::Gt(l, r) | Term::App(l, r) |
+            Term::Append(l, r) |
             Term::BitXor(l, r) | Term::BitAnd(l, r) | Term::BitOr(l, r) |
             Term::Shl(l, r) | Term::Shr(l, r) | Term::BufferLoad(l, r) => {
                 self.count_binary(name, l, r)

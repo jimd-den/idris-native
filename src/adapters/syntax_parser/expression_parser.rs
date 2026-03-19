@@ -288,7 +288,7 @@ impl<'a, 'arena> Parser<'a, 'arena> {
             } else if self.peek() == &Token::Append {
                 self.advance();
                 let rhs = self.parse_multiplicative()?;
-                lhs = unsafe { &*self.arena.alloc(Term::Add(lhs, rhs)) };
+                lhs = unsafe { &*self.arena.alloc(Term::Append(lhs, rhs)) };
             } else {
                 break;
             }

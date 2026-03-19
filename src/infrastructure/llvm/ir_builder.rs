@@ -10,6 +10,7 @@ use std::collections::HashMap;
 pub struct IRBuilder {
     pub instructions: Vec<String>,
     pub function_definitions: Vec<String>,
+    pub string_literals: std::collections::HashMap<String, String>,
     next_reg: usize,
     label_counter: usize,
     fn_counter: usize,
@@ -21,6 +22,7 @@ impl IRBuilder {
         Self {
             instructions: Vec::new(),
             function_definitions: Vec::new(),
+            string_literals: std::collections::HashMap::new(),
             next_reg: 1,
             label_counter: 0,
             fn_counter: 0,
@@ -31,6 +33,11 @@ impl IRBuilder {
     /// Sets the default bit width for integer operations.
     pub fn set_bit_width(&mut self, width: u32) {
         self.bit_width = width;
+    }
+
+    fn new_string_label(&mut self) -> String {
+        let label = format!("str_{}", self.string_literals.len());
+        label
     }
 
     fn new_reg(&mut self) -> String {
@@ -80,8 +87,22 @@ impl IRBuilder {
                 s.push_str(&format!("{:x}", bits));
                 s
             }
-            Term::String(_s) => {
-                String::from("0")
+            Term::String(s) => {
+                let label = if let Some(l) = self.string_literals.get(s) {
+                    l.clone()
+                } else {
+                    let l = self.new_string_label();
+                    self.string_literals.insert(s.clone(), l.clone());
+                    l
+                };
+                let res = self.new_reg();
+                let mut instr = String::from("  ");
+                instr.push_str(&res); instr.push_str(" = ptrtoint [");
+                instr.push_str(&(s.len() + 1).to_string());
+                instr.push_str(" x i8]* @"); instr.push_str(&label);
+                instr.push_str(" to i64\n");
+                self.instructions.push(instr);
+                res
             }
             Term::Char(c) => {
                 (*c as u32).to_string()
@@ -113,6 +134,13 @@ impl IRBuilder {
                 let rv = self.lower_term(r, env);
                 let res = self.new_reg();
                 self.instructions.push(format!("  {} = sdiv {} {}, {}\n", res, ty, lv, rv));
+                res
+            }
+            Term::Append(l, r) => {
+                let lv = self.lower_term(l, env);
+                let rv = self.lower_term(r, env);
+                let res = self.new_reg();
+                self.instructions.push(format!("  {} = call i64 @concat(i64 {}, i64 {})\n", res, lv, rv));
                 res
             }
             Term::Eq(l, r) => {
@@ -332,12 +360,23 @@ impl IRBuilder {
                 for stmt in stmts {
                     match stmt {
                         Term::Bind(name, action) => {
-                            let res = self.lower_term(action, &current_env);
+                            let mut res = self.lower_term(action, &current_env);
+                            if res.starts_with("@") {
+                                let r = self.new_reg();
+                                self.instructions.push(format!("  {} = call {} {}()\n", r, ty, res));
+                                res = r;
+                            }
                             current_env.insert(name.clone(), res.clone());
                             last_res = res;
                         }
                         _ => {
-                            last_res = self.lower_term(stmt, &current_env);
+                            let mut res = self.lower_term(stmt, &current_env);
+                            if res.starts_with("@") {
+                                let r = self.new_reg();
+                                self.instructions.push(format!("  {} = call {} {}()\n", r, ty, res));
+                                res = r;
+                            }
+                            last_res = res;
                         }
                     }
                 }

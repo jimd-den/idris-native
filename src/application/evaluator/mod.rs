@@ -46,6 +46,17 @@ impl<'a> Evaluator<'a> {
                     self.alloc(Term::Add(lv, rv))
                 }
             }
+            Term::Append(l, r) => {
+                let lv = self.eval(l);
+                let rv = self.eval(r);
+                if let (Term::String(ls), Term::String(rs)) = (lv, rv) {
+                    let mut s = ls.clone();
+                    s.push_str(rs);
+                    self.alloc(Term::String(s))
+                } else {
+                    self.alloc(Term::Append(lv, rv))
+                }
+            }
             Term::Sub(l, r) => {
                 let lv = self.eval(l);
                 let rv = self.eval(r);
@@ -137,6 +148,11 @@ impl<'a> Evaluator<'a> {
                 let new_l = self.substitute(l, name, replacement);
                 let new_r = self.substitute(r, name, replacement);
                 self.alloc(Term::Div(new_l, new_r))
+            }
+            Term::Append(l, r) => {
+                let new_l = self.substitute(l, name, replacement);
+                let new_r = self.substitute(r, name, replacement);
+                self.alloc(Term::Append(new_l, new_r))
             }
             Term::BitXor(l, r) => {
                 let new_l = self.substitute(l, name, replacement);

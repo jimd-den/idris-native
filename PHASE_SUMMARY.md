@@ -21,6 +21,21 @@
     - Implemented type signature parsing (`parse_signature`, `parse_pi`).
     - Added `Let` bindings support.
 
+## Phase 4: Full Idris 2 Language & Error Pipeline
+- **Extended AST & Language Support**: 
+    - Added AST nodes and parsing for `Module`, `Import`, `Data`, `Interface`, `Implementation`, `Record`, `Mutual`, `Where`, `Do`, and `Bind`.
+    - Expanded literal support to include `String`, `Float`, and `Char`.
+    - Supported qualified identifiers (dots in names).
+- **Structured Error Reporting**:
+    - Replaced all `panic!` calls in the scanner and parser with a `Result`-based `CompilerError` pipeline.
+    - Implemented Idris 2 style diagnostic rendering with line numbers, carets, and hints.
+- **Reference Sample Compilation**:
+    - Successfully compiled official Idris 2 samples (`Prims.idr`, `io.idr`) using the new `--no-qtt` mode.
+    - Implemented target-aware IR generation for WASM and Bare-Metal targets.
+- **REPL Robustification**:
+    - Wired the REPL to use the actual `Evaluator` and `Parser`, moving away from mock string matching.
+
 ## Verification
 - Verified against official Idris 2 compiler using `ackermann_official.idr` and `sha256_official.idr`.
-- Robust test suite with 40+ automated tests covering entities, use cases, and integration.
+- Robust test suite with 80+ automated tests covering entities, use cases, and integration.
+- Successfully compiled `idris2_ref/samples/` reference files.
