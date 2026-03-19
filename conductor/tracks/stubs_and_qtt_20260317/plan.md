@@ -21,7 +21,7 @@
     - [x] **Green:** Complete the parsing logic and verify it routes correctly to `QttChecker`.
 - [x] **Task: Conductor - User Manual Verification 'Phase 2' (Protocol in workflow.md)**
 
-## Phase 3: Backend Stubs & Missing Targets (A, B, E, I)
+## Phase 3: Backend Stubs & Missing Targets (A, B, E, I) [checkpoint: fb62e92]
 - [x] **Task: Implement Missing `LlvmBackend` Methods**
     - [x] **Red:** Uncomment and fix `tests_broken.rs` for `gen_integer_ir`, `gen_print_ir`, `set_target`, etc.
     - [x] **Green:** Implement the missing methods in `LlvmBackend` and `IRBuilder::set_bit_width`.
