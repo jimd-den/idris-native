@@ -25,4 +25,5 @@ mod tests {
     pub mod sha256_syntax_tests;
     pub mod error_tests;
     pub mod qtt_syntax_tests;
+    pub mod full_lang_tests;
 }

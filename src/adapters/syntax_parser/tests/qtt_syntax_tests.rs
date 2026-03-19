@@ -13,9 +13,9 @@ fn test_parse_linear_pi_type() {
     let tokens = lex(source).expect("Lexing failed");
     let mut parser = Parser::new(tokens, &mut arena);
     
-    let (_name, sig, _body, _args) = parser.parse_program().expect("Parsing failed");
+    let decls = parser.parse_program().expect("Parsing failed");
+    let sig = &decls[0];
     
-    // sig should be Pi("x", Multiplicity::One, IntegerType, IntegerType)
     match sig {
         Term::Pi(name, mult, _ty, _body) => {
             assert_eq!(name, "x");
@@ -32,7 +32,8 @@ fn test_parse_erased_pi_type() {
     let tokens = lex(source).expect("Lexing failed");
     let mut parser = Parser::new(tokens, &mut arena);
     
-    let (_name, sig, _body, _args) = parser.parse_program().expect("Parsing failed");
+    let decls = parser.parse_program().expect("Parsing failed");
+    let sig = &decls[0];
     
     match sig {
         Term::Pi(name, mult, _ty, _body) => {

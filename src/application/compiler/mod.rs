@@ -2,7 +2,7 @@
 //!
 //! This module orchestrates the end-to-end compilation pipeline.
 
-use crate::domain::{Term, Multiplicity};
+use crate::domain::Term;
 use crate::domain::arena::Arena;
 use crate::adapters::syntax_parser::{lex, Parser};
 use crate::application::qtt_checker::QttChecker;
@@ -13,7 +13,7 @@ use std::fs;
 /// An abstraction for the code generation and toolchain backend.
 pub trait Backend {
     fn lower_term(&self, term: &Term, env: &HashMap<String, String>) -> String;
-    fn lower_program(&self, name: &str, sig: &Term, body: &Term, args: &[String]) -> String;
+    fn lower_program(&self, declarations: &[Term]) -> String;
     fn compile_to_binary(&self, ir: String, output_path: &str) -> std::io::Result<bool>;
 }
 
@@ -60,37 +60,29 @@ impl<'a> Compiler<'a> {
         };
         
         let mut parser = Parser::new(tokens, &mut arena);
-        let (name, _sig, body, args) = match parser.parse_program() {
-            Ok(p) => p,
+        let declarations = match parser.parse_program() {
+            Ok(decls) => decls,
             Err(e) => {
                 diagnostics::report_error(&e, source, filename);
                 return Err("Parsing failed".to_string());
             }
         };
-        diagnostics::log("COMPILER", &format!("PARSED definition: {}", name));
-
+        
         // 2. QTT Validation
         if self.qtt_enabled {
             let checker = QttChecker::new();
-            for arg in &args {
-                if !checker.check_multiplicity(arg, Multiplicity::One, body) {
-                    let err = format!("QTT Multiplicity Error: Linear variable '{}' used incorrectly.", arg);
+            for decl in &declarations {
+                if !checker.check_term(decl) {
+                    let err = "QTT Structural Error: Boundary violation detected.".to_string();
                     diagnostics::log("COMPILER", &format!("ERROR: {}", err));
                     return Err(err);
                 }
             }
-            if !checker.check_term(body) {
-                let err = "QTT Structural Error: Boundary violation detected.".to_string();
-                diagnostics::log("COMPILER", &format!("ERROR: {}", err));
-                return Err(err);
-            }
             diagnostics::log("COMPILER", "QTT validation successful.");
-        } else {
-            diagnostics::log("COMPILER", "QTT validation skipped (non-QTT mode).");
         }
 
         // 3. Lowering and Compilation
-        let ir = self.backend.lower_program(&name, _sig, body, &args);
+        let ir = self.backend.lower_program(&declarations);
         
         diagnostics::log("COMPILER", "INVOKE backend.compile_to_binary");
         match self.backend.compile_to_binary(ir, output_path) {

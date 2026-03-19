@@ -19,7 +19,8 @@ impl QttChecker {
     /// Recursively validates the term against QTT constraints.
     pub fn check_term(&self, term: &Term) -> bool {
         match term {
-            Term::Add(lhs, rhs) | Term::Sub(lhs, rhs) | Term::Eq(lhs, rhs) | Term::App(lhs, rhs) |
+            Term::Add(lhs, rhs) | Term::Sub(lhs, rhs) | Term::Mul(lhs, rhs) | Term::Div(lhs, rhs) |
+            Term::Eq(lhs, rhs) | Term::Lt(lhs, rhs) | Term::Gt(lhs, rhs) | Term::App(lhs, rhs) |
             Term::BitXor(lhs, rhs) | Term::BitAnd(lhs, rhs) | Term::BitOr(lhs, rhs) |
             Term::Shl(lhs, rhs) | Term::Shr(lhs, rhs) => {
                 self.check_term(lhs) && self.check_term(rhs)
@@ -53,7 +54,34 @@ impl QttChecker {
                 }
                 true
             }
-            Term::Var(_) | Term::Integer(_) | Term::IntegerType | Term::I32Type | Term::I8Type | Term::Bits64Type | Term::IOType | Term::Buffer(_) => true,
+            Term::Do(stmts) => {
+                for stmt in stmts {
+                    if !self.check_term(stmt) { return false; }
+                }
+                true
+            }
+            Term::Bind(_, action) => self.check_term(action),
+            Term::Where(t, defs) => {
+                if !self.check_term(t) { return false; }
+                for def in defs {
+                    if !self.check_term(def) { return false; }
+                }
+                true
+            }
+            Term::Mutual(terms) => {
+                for t in terms {
+                    if !self.check_term(t) { return false; }
+                }
+                true
+            }
+            Term::Def(_, _, body) => self.check_term(body),
+            Term::Data(_, _, _) | Term::Interface(_, _, _) | Term::Implementation(_, _, _) | Term::Record(_, _) |
+            Term::Module(_) | Term::Import(_) => true,
+            
+            Term::Var(_) | Term::Integer(_) | Term::Float(_) | Term::String(_) | Term::Char(_) |
+            Term::IntegerType | Term::FloatType | Term::StringType | Term::CharType |
+            Term::I32Type | Term::I8Type | Term::Bits64Type | Term::IOType | Term::TypeType |
+            Term::Universe(_) | Term::Buffer(_) => true,
         }
     }
 
@@ -88,9 +116,14 @@ impl QttChecker {
     fn count_usage(&self, name: &str, term: &Term) -> i64 {
         match term {
             Term::Var(v) if v == name => 1,
-            Term::Var(_) | Term::Integer(_) | Term::IntegerType | Term::I32Type | Term::I8Type | Term::Buffer(_) => 0,
             
-            Term::Add(l, r) | Term::Sub(l, r) | Term::Eq(l, r) | Term::App(l, r) |
+            Term::Var(_) | Term::Integer(_) | Term::Float(_) | Term::String(_) | Term::Char(_) |
+            Term::IntegerType | Term::FloatType | Term::StringType | Term::CharType |
+            Term::I32Type | Term::I8Type | Term::Bits64Type | Term::IOType | Term::TypeType |
+            Term::Universe(_) | Term::Buffer(_) => 0,
+            
+            Term::Add(l, r) | Term::Sub(l, r) | Term::Mul(l, r) | Term::Div(l, r) |
+            Term::Eq(l, r) | Term::Lt(l, r) | Term::Gt(l, r) | Term::App(l, r) |
             Term::BitXor(l, r) | Term::BitAnd(l, r) | Term::BitOr(l, r) |
             Term::Shl(l, r) | Term::Shr(l, r) | Term::BufferLoad(l, r) => {
                 self.count_binary(name, l, r)
@@ -125,8 +158,37 @@ impl QttChecker {
                 }
                 target_usage + max_branch_usage
             }
+
+            Term::Do(stmts) => {
+                let mut total = 0;
+                for stmt in stmts {
+                    total += self.count_usage(name, stmt);
+                }
+                total
+            }
+            Term::Bind(n, a) => {
+                if n == name { 0 } else { self.count_usage(name, a) }
+            }
+            Term::Where(t, defs) => {
+                let mut total = self.count_usage(name, t);
+                for def in defs {
+                    total += self.count_usage(name, def);
+                }
+                total
+            }
+            Term::Mutual(terms) => {
+                let mut total = 0;
+                for t in terms {
+                    total += self.count_usage(name, t);
+                }
+                total
+            }
+            Term::Def(n, args, body) => {
+                if n == name || args.contains(&name.to_string()) { 0 } else { self.count_usage(name, body) }
+            }
             
-            Term::Bits64Type | Term::IOType => 0,
+            Term::Data(_, _, _) | Term::Interface(_, _, _) | Term::Implementation(_, _, _) | Term::Record(_, _) |
+            Term::Module(_) | Term::Import(_) => 0,
         }
     }
 

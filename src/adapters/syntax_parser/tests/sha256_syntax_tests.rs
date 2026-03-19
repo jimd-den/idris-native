@@ -29,19 +29,27 @@ buf_test n = let b = buffer 64 in setBits64 b 0 n";
     let tokens = lex(source).expect("Lexing failed");
     let mut parser = Parser::new(tokens, &mut arena);
     
-    let (name, _sig, body, args) = parser.parse_program().expect("Parsing failed");
-    assert_eq!(name, "buf_test");
-    assert_eq!(args.len(), 1);
+    let decls = parser.parse_program().expect("Parsing failed");
+    // Should have 2 decls: signature (Integer -> Integer) and body
+    assert_eq!(decls.len(), 2);
     
-    // Verify AST structure for BufferStore
-    match body {
-        Term::Let(_, _val, inner) => {
-            match inner {
-                Term::BufferStore(_, _, _) => (),
-                _ => panic!("Expected BufferStore, got {:?}", inner),
+    // Decls[1] is Term::Def("buf_test", ["n"], body)
+    match &decls[1] {
+        Term::Def(name, args, body) => {
+            assert_eq!(name, "buf_test");
+            assert_eq!(args.len(), 1);
+            // Verify AST structure for BufferStore
+            match body {
+                Term::Let(_, _val, inner) => {
+                    match inner {
+                        Term::BufferStore(_, _, _) => (),
+                        _ => panic!("Expected BufferStore, got {:?}", inner),
+                    }
+                },
+                _ => panic!("Expected Let for buffer binding, got {:?}", body),
             }
         },
-        _ => panic!("Expected Let for buffer binding, got {:?}", body),
+        _ => panic!("Expected Def, got {:?}", decls[1]),
     }
 }
 
@@ -53,13 +61,18 @@ bit_test a b = ( a `xor` b ) .&. ( a .|. b )";
     let tokens = lex(source).expect("Lexing failed");
     let mut parser = Parser::new(tokens, &mut arena);
     
-    let (name, _sig, body, _args) = parser.parse_program().expect("Parsing failed");
-    assert_eq!(name, "bit_test");
-    
-    // Verify AST structure for Bitwise operators
-    match body {
-        Term::BitAnd(_, _) => (),
-        _ => panic!("Expected BitAnd at top level, got {:?}", body),
+    let decls = parser.parse_program().expect("Parsing failed");
+    match &decls[1] {
+        Term::Def(name, args, body) => {
+            assert_eq!(name, "bit_test");
+            assert_eq!(args.len(), 2);
+            // Verify AST structure for Bitwise operators
+            match body {
+                Term::BitAnd(_, _) => (),
+                _ => panic!("Expected BitAnd at top level, got {:?}", body),
+            }
+        },
+        _ => panic!("Expected Def, got {:?}", decls[1]),
     }
 }
 
@@ -71,8 +84,8 @@ type_test a b c = 42";
     let tokens = lex(source).expect("Lexing failed");
     let mut parser = Parser::new(tokens, &mut arena);
     
-    let (name, _sig, _body, _args) = parser.parse_program().expect("Parsing failed");
-    assert_eq!(name, "type_test");
+    let decls = parser.parse_program().expect("Parsing failed");
+    assert_eq!(decls.len(), 2);
 }
 
 #[test]
@@ -83,11 +96,15 @@ let_test x = let y = x + 1 in y";
     let tokens = lex(source).expect("Lexing failed");
     let mut parser = Parser::new(tokens, &mut arena);
     
-    let (name, _sig, body, _args) = parser.parse_program().expect("Parsing failed");
-    assert_eq!(name, "let_test");
-    
-    match body {
-        Term::Let(n, _, _) => assert_eq!(n, "y"),
-        _ => panic!("Expected Let, got {:?}", body),
+    let decls = parser.parse_program().expect("Parsing failed");
+    match &decls[1] {
+        Term::Def(name, _args, body) => {
+            assert_eq!(name, "let_test");
+            match body {
+                Term::Let(n, _, _) => assert_eq!(n, "y"),
+                _ => panic!("Expected Let, got {:?}", body),
+            }
+        },
+        _ => panic!("Expected Def, got {:?}", decls[1]),
     }
 }

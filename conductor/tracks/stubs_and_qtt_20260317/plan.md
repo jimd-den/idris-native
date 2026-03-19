@@ -34,12 +34,12 @@
 - [x] **Task: Conductor - User Manual Verification 'Phase 3' (Protocol in workflow.md)**
 
 ## Phase 4: Idris 2 Language Expansion (Entities & Adapters)
-- [ ] **Task: Expand AST (`Term`) for Full Idris 2**
-    - [ ] **Red:** Write tests ensuring the AST can represent modules, imports, Data constructors, interfaces, records, strings, and floats.
-    - [ ] **Green:** Add required `Term` variants.
-- [ ] **Task: Expand Parser to Full Language**
-    - [ ] **Red:** Create test files containing full Idris 2 syntax (e.g., `module Main`, `import Data.Buffer`, `data`, `interface`).
-    - [ ] **Green:** Implement parsing logic for these constructs in `Parser`.
+- [x] **Task: Expand AST (`Term`) for Full Idris 2**
+    - [x] **Red:** Write tests ensuring the AST can represent modules, imports, Data constructors, interfaces, records, strings, and floats.
+    - [x] **Green:** Add required `Term` variants.
+- [x] **Task: Expand Parser to Full Language**
+    - [x] **Red:** Create test files containing full Idris 2 syntax (e.g., `module Main`, `import Data.Buffer`, `data`, `interface`).
+    - [x] **Green:** Implement parsing logic for these constructs in `Parser`.
 - [ ] **Task: Conductor - User Manual Verification 'Phase 4' (Protocol in workflow.md)**
 
 ## Phase 5: REPL Integration & Reference Verification (C)

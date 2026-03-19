@@ -15,7 +15,7 @@ impl Backend for MockBackend {
     fn lower_term(&self, _term: &Term, _env: &HashMap<String, String>) -> String {
         "mock_ir".to_string()
     }
-    fn lower_program(&self, _name: &str, _sig: &Term, _body: &Term, _args: &[String]) -> String {
+    fn lower_program(&self, _declarations: &[Term]) -> String {
         "mock_ir".to_string()
     }
     fn compile_to_binary(&self, _ir: String, output_path: &str) -> io::Result<bool> {

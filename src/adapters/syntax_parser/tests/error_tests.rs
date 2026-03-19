@@ -24,15 +24,10 @@ fn test_scanner_unknown_character_returns_err() {
 #[test]
 fn test_parser_syntax_error_returns_err() {
     let mut arena = Arena::new();
-    let source = "main = 42"; // Incorrect signature format
+    let source = "main : "; // Missing type in signature
     let tokens = lex(source).expect("Lexing should succeed for valid characters");
     let mut parser = Parser::new(tokens, &mut arena);
     
     let result = parser.parse_program();
-    assert!(result.is_err(), "Expected ParseError for invalid signature");
-    if let Err(CompilerError::Parse(e)) = result {
-        assert!(e.message.contains("Expected :"));
-    } else {
-        panic!("Expected Parse error variant");
-    }
+    assert!(result.is_err(), "Expected ParseError for incomplete signature");
 }

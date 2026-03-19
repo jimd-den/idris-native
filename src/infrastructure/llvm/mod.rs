@@ -158,21 +158,22 @@ impl Backend for LlvmBackend {
         builder.lower_term(term, env)
     }
 
-    fn lower_program(&self, name: &str, _sig: &Term, body: &Term, args: &[String]) -> String {
+    fn lower_program(&self, declarations: &[Term]) -> String {
         let mut builder = IRBuilder::new();
-        let mut env = HashMap::new();
+        let env = HashMap::new();
         
-        let mut arg_str = String::new();
-        for (i, arg) in args.iter().enumerate() {
-            if i > 0 { arg_str.push_str(", "); }
-            arg_str.push_str("i64 %");
-            arg_str.push_str(arg);
-            let mut val_name = String::from("%");
-            val_name.push_str(arg);
-            env.insert(arg.clone(), val_name);
-        }
+        let mut main_name = "main".to_string();
+        let mut main_args_count = 0;
 
-        let res_reg = builder.lower_term(body, &env);
+        for decl in declarations {
+            builder.lower_term(decl, &env);
+            if let Term::Def(name, args, _) = decl {
+                if name == "main" || main_args_count == 0 {
+                    main_name = name.clone();
+                    main_args_count = args.len();
+                }
+            }
+        }
         
         let mut ir = String::new();
         ir.push_str("target triple = \"");
@@ -185,29 +186,15 @@ impl Backend for LlvmBackend {
             ir.push('\n');
         }
 
-        ir.push_str("\ndefine i64 @");
-        ir.push_str(name);
-        ir.push_str("(");
-        ir.push_str(&arg_str);
-        ir.push_str(") {\n");
-        
-        for instr in &builder.instructions {
-            ir.push_str(instr);
-            ir.push_str("\n");
-        }
-        ir.push_str("  ret i64 ");
-        ir.push_str(&res_reg);
-        ir.push_str("\n}\n");
-
         // Add a main wrapper for the MVP to make it executable
         ir.push_str("\ndefine i32 @main() {\n");
         let mut call_args = String::new();
-        for _ in 0..args.len() {
+        for _ in 0..main_args_count {
             if !call_args.is_empty() { call_args.push_str(", "); }
             call_args.push_str("i64 2");
         }
         ir.push_str("  %res = call i64 @");
-        ir.push_str(name);
+        ir.push_str(&main_name);
         ir.push_str("(");
         ir.push_str(&call_args);
         ir.push_str(")\n");

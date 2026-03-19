@@ -30,6 +30,7 @@ mod tests {
     pub mod arena_robust_tests;
     pub mod term_tests;
     pub mod term_structure_tests;
+    pub mod extended_term_tests;
     pub mod sha256_primitives_tests;
     pub mod buffer_primitives_tests;
 }

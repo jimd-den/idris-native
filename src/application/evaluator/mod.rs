@@ -2,17 +2,6 @@
 //!
 //! This module implements the evaluation logic for Idris 2 terms, 
 //! performing beta-reduction and normalization.
-//!
-//! # Strategic Architecture
-//! As a Use Case, the `Evaluator` orchestrates the normalization of 
-//! domain entities (`Term`). It is completely decoupled from 
-//! external frameworks and implementation details.
-//!
-//! # Performance & Arena Allocation
-//! To achieve high performance and avoid memory leaks, all terms 
-//! produced during evaluation are allocated within a provided `Arena`. 
-//! This eliminates the overhead of a Garbage Collector and ensures 
-//! efficient memory management.
 
 use crate::domain::Term;
 use crate::domain::arena::Arena;
@@ -57,6 +46,31 @@ impl<'a> Evaluator<'a> {
                     self.alloc(Term::Add(lv, rv))
                 }
             }
+            Term::Sub(l, r) => {
+                let lv = self.eval(l);
+                let rv = self.eval(r);
+                if let (Term::Integer(ln), Term::Integer(rn)) = (lv, rv) {
+                    self.alloc(Term::Integer(ln - rn))
+                } else {
+                    self.alloc(Term::Sub(lv, rv))
+                }
+            }
+            Term::If(c, t, e) => {
+                let cv = self.eval(c);
+                if let Term::Integer(n) = cv {
+                    if *n != 0 { self.eval(t) } else { self.eval(e) }
+                } else {
+                    let tv = self.eval(t);
+                    let ev = self.eval(e);
+                    self.alloc(Term::If(cv, tv, ev))
+                }
+            }
+            Term::Let(n, v, b) => {
+                let vv = self.eval(v);
+                let substituted = self.substitute(b, n, vv);
+                self.eval(substituted)
+            }
+            // Catch-all for non-reducible terms or high-level declarations
             _ => term,
         }
     }
@@ -76,7 +90,11 @@ impl<'a> Evaluator<'a> {
     fn substitute(&self, body: &'a Term<'a>, name: &str, replacement: &'a Term<'a>) -> &'a Term<'a> {
         match body {
             Term::Var(v) if v == name => replacement,
-            Term::Var(_) => body,
+            Term::Var(_) | Term::Integer(_) | Term::Float(_) | Term::String(_) | Term::Char(_) |
+            Term::IntegerType | Term::FloatType | Term::StringType | Term::CharType |
+            Term::I32Type | Term::I8Type | Term::Bits64Type | Term::IOType | Term::TypeType |
+            Term::Universe(_) => body,
+
             Term::Lambda(n, t, b) => {
                 if n == name {
                     body // Shadowed
@@ -90,6 +108,16 @@ impl<'a> Evaluator<'a> {
                 let new_a = self.substitute(a, name, replacement);
                 self.alloc(Term::App(new_f, new_a))
             }
+            Term::Pi(n, q, t, b) => {
+                if n == name {
+                    let new_t = self.substitute(t, name, replacement);
+                    self.alloc(Term::Pi(n.clone(), *q, new_t, b))
+                } else {
+                    let new_t = self.substitute(t, name, replacement);
+                    let new_b = self.substitute(b, name, replacement);
+                    self.alloc(Term::Pi(n.clone(), *q, new_t, new_b))
+                }
+            }
             Term::Add(l, r) => {
                 let new_l = self.substitute(l, name, replacement);
                 let new_r = self.substitute(r, name, replacement);
@@ -99,6 +127,16 @@ impl<'a> Evaluator<'a> {
                 let new_l = self.substitute(l, name, replacement);
                 let new_r = self.substitute(r, name, replacement);
                 self.alloc(Term::Sub(new_l, new_r))
+            }
+            Term::Mul(l, r) => {
+                let new_l = self.substitute(l, name, replacement);
+                let new_r = self.substitute(r, name, replacement);
+                self.alloc(Term::Mul(new_l, new_r))
+            }
+            Term::Div(l, r) => {
+                let new_l = self.substitute(l, name, replacement);
+                let new_r = self.substitute(r, name, replacement);
+                self.alloc(Term::Div(new_l, new_r))
             }
             Term::BitXor(l, r) => {
                 let new_l = self.substitute(l, name, replacement);
@@ -134,6 +172,16 @@ impl<'a> Evaluator<'a> {
                 let new_r = self.substitute(r, name, replacement);
                 self.alloc(Term::Eq(new_l, new_r))
             }
+            Term::Lt(l, r) => {
+                let new_l = self.substitute(l, name, replacement);
+                let new_r = self.substitute(r, name, replacement);
+                self.alloc(Term::Lt(new_l, new_r))
+            }
+            Term::Gt(l, r) => {
+                let new_l = self.substitute(l, name, replacement);
+                let new_r = self.substitute(r, name, replacement);
+                self.alloc(Term::Gt(new_l, new_r))
+            }
             Term::If(c, t, e) => {
                 let new_c = self.substitute(c, name, replacement);
                 let new_t = self.substitute(t, name, replacement);
@@ -160,6 +208,16 @@ impl<'a> Evaluator<'a> {
                     self.alloc(Term::Let(n.clone(), new_v, new_b))
                 }
             }
+            Term::LetRec(n, v, b) => {
+                if n == name {
+                    let new_v = self.substitute(v, name, replacement);
+                    self.alloc(Term::LetRec(n.clone(), new_v, b))
+                } else {
+                    let new_v = self.substitute(v, name, replacement);
+                    let new_b = self.substitute(b, name, replacement);
+                    self.alloc(Term::LetRec(n.clone(), new_v, new_b))
+                }
+            }
             Term::Case(target, branches) => {
                 let new_target = self.substitute(target, name, replacement);
                 let mut new_branches = Vec::new();
@@ -172,6 +230,27 @@ impl<'a> Evaluator<'a> {
                     }
                 }
                 self.alloc(Term::Case(new_target, new_branches))
+            }
+            Term::Do(stmts) => {
+                let new_stmts = stmts.iter().map(|s| self.substitute(s, name, replacement).clone()).collect();
+                self.alloc(Term::Do(new_stmts))
+            }
+            Term::Bind(n, a) => {
+                let new_a = self.substitute(a, name, replacement);
+                self.alloc(Term::Bind(n.clone(), new_a))
+            }
+            Term::Where(t, defs) => {
+                let new_t = self.substitute(t, name, replacement);
+                let new_defs = defs.iter().map(|d| self.substitute(d, name, replacement).clone()).collect();
+                self.alloc(Term::Where(new_t, new_defs))
+            }
+            Term::Mutual(terms) => {
+                let new_terms = terms.iter().map(|t| self.substitute(t, name, replacement).clone()).collect();
+                self.alloc(Term::Mutual(new_terms))
+            }
+            Term::Def(n, args, b) => {
+                let new_b = self.substitute(b, name, replacement);
+                self.alloc(Term::Def(n.clone(), args.clone(), new_b))
             }
             _ => body,
         }

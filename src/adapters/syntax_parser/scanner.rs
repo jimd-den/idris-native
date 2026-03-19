@@ -1,16 +1,6 @@
 //! # Scanner (Adapter)
 //!
 //! This module implements the lexical analysis for the Idris 2 compiler.
-//!
-//! # Strategic Architecture
-//! As an Adapter, the `Scanner` is responsible for converting raw source 
-//! text into a stream of structured `Token`s. It uses the `common::Cursor` 
-//! to maintain a sliding window over the source characters.
-//!
-//! # Literate Documentation
-//! Tokenization is the first step in the compilation pipeline. The scanner 
-//! partitions the input string into meaningful symbols (identifiers, 
-//! keywords, literals), which are then consumed by the parser.
 
 use crate::common::cursor::Cursor;
 use crate::common::errors::{CompilerError, LexError, Span, Spanned};
@@ -20,8 +10,14 @@ use crate::common::errors::{CompilerError, LexError, Span, Spanned};
 pub enum Token {
     Identifier(String),
     Integer(i64),
+    Float(u64), // Bits of f64
+    String(String),
+    Char(char),
+    
     // Keywords
-    If, Then, Else, Let, In, Case, Of, Data,
+    If, Then, Else, Let, In, Case, Of, Data, Interface, Implementation, Record,
+    Mutual, Where, Do, Module, Import,
+    
     // Symbols
     Assign,      // =
     Arrow,       // ->
@@ -31,16 +27,28 @@ pub enum Token {
     LParen,      // (
     RParen,      // )
     Backtick,    // `
+    LBrace,      // {
+    RBrace,      // }
+    Semi,        // ;
+    Comma,       // ,
+    Dot,         // .
+    
     // Operators
     Eq,          // ==
     Plus,        // +
     Minus,       // -
+    Star,        // *
+    Slash,       // /
+    Lt,          // <
+    Gt,          // >
+    
     BitAnd,      // .&.
     BitOr,       // .|.
     Xor,         // xor
     ShiftL,      // shiftL
     ShiftR,      // shiftR
     Complement,  // complement
+    
     // Control
     EOF,
 }
@@ -70,14 +78,11 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    /// Scans the source text and returns a vector of tokens or an error.
     pub fn scan_tokens(&mut self) -> Result<Vec<Spanned<Token>>, CompilerError> {
         let _span = crate::trace_span!("SCANNER", "scan_tokens");
-        
         while !self.cursor.is_at_end() {
             self.scan_token()?;
         }
-        
         self.add_token(Token::EOF, 1);
         Ok(self.tokens.clone())
     }
@@ -110,6 +115,10 @@ impl<'a> Scanner<'a> {
         match c {
             '(' => self.add_token(Token::LParen, 1),
             ')' => self.add_token(Token::RParen, 1),
+            '{' => self.add_token(Token::LBrace, 1),
+            '}' => self.add_token(Token::RBrace, 1),
+            ';' => self.add_token(Token::Semi, 1),
+            ',' => self.add_token(Token::Comma, 1),
             ':' => self.add_token(Token::Colon, 1),
             '=' => {
                 if self.cursor.match_item(&'>') {
@@ -122,7 +131,14 @@ impl<'a> Scanner<'a> {
                     self.add_token(Token::Assign, 1);
                 }
             }
-            '|' => self.add_token(Token::Pipe, 1),
+            '|' => {
+                if self.cursor.match_item(&'|') {
+                    self.col += 1;
+                    // For now no LogicalOr token, skip or add if needed
+                } else {
+                    self.add_token(Token::Pipe, 1);
+                }
+            }
             '`' => self.add_token(Token::Backtick, 1),
             '+' => self.add_token(Token::Plus, 1),
             '-' => {
@@ -130,7 +146,6 @@ impl<'a> Scanner<'a> {
                     self.col += 1;
                     self.add_token(Token::Arrow, 2);
                 } else if self.cursor.match_item(&'-') {
-                    // Comment: skip until end of line
                     while self.cursor.peek() != Some(&'\n') && !self.cursor.is_at_end() {
                         self.advance();
                     }
@@ -138,6 +153,10 @@ impl<'a> Scanner<'a> {
                     self.add_token(Token::Minus, 1);
                 }
             }
+            '*' => self.add_token(Token::Star, 1),
+            '/' => self.add_token(Token::Slash, 1),
+            '<' => self.add_token(Token::Lt, 1),
+            '>' => self.add_token(Token::Gt, 1),
             '.' => {
                 if self.cursor.match_item(&'&') && self.cursor.match_item(&'.') {
                     self.col += 2;
@@ -145,9 +164,13 @@ impl<'a> Scanner<'a> {
                 } else if self.cursor.match_item(&'|') && self.cursor.match_item(&'.') {
                     self.col += 2;
                     self.add_token(Token::BitOr, 3);
+                } else {
+                    self.add_token(Token::Dot, 1);
                 }
             }
-            ' ' | '\r' | '\t' | '\n' => (), // Ignore whitespace
+            '"' => self.string()?,
+            '\'' => self.character()?,
+            ' ' | '\r' | '\t' | '\n' => (),
             _ => {
                 if c.is_digit(10) {
                     self.number(c);
@@ -165,17 +188,58 @@ impl<'a> Scanner<'a> {
         Ok(())
     }
 
+    fn string(&mut self) -> Result<(), CompilerError> {
+        let start_col = self.col - 1;
+        let mut value = String::new();
+        while self.cursor.peek() != Some(&'"') && !self.cursor.is_at_end() {
+            if let Some(c) = self.advance() {
+                value.push(c);
+            }
+        }
+        if self.cursor.is_at_end() {
+            return Err(CompilerError::Lex(LexError {
+                span: Span::new(self.line, start_col, value.len() + 1),
+                character: '"',
+                message: "Unterminated string".to_string(),
+            }));
+        }
+        self.advance(); // Closing "
+        self.add_token(Token::String(value.clone()), value.len() + 2);
+        Ok(())
+    }
+
+    fn character(&mut self) -> Result<(), CompilerError> {
+        let start_col = self.col - 1;
+        let c = match self.advance() {
+            Some(c) => c,
+            None => return Err(CompilerError::Lex(LexError {
+                span: Span::new(self.line, start_col, 1),
+                character: '\'',
+                message: "Empty character literal".to_string(),
+            })),
+        };
+        if self.cursor.peek() != Some(&'\'') {
+            return Err(CompilerError::Lex(LexError {
+                span: Span::new(self.line, start_col, 2),
+                character: c,
+                message: "Unterminated character literal".to_string(),
+            }));
+        }
+        self.advance(); // Closing '
+        self.add_token(Token::Char(c), 3);
+        Ok(())
+    }
+
     fn identifier(&mut self, first: char) {
         let mut text = String::from(first);
         while let Some(&c) = self.cursor.peek() {
-            if c.is_alphanumeric() || c == '_' {
+            if c.is_alphanumeric() || c == '_' || c == '.' {
                 text.push(c);
                 self.advance();
             } else {
                 break;
             }
         }
-        
         let len = text.len();
         let token = match text.as_str() {
             "if" => Token::If,
@@ -186,6 +250,14 @@ impl<'a> Scanner<'a> {
             "case" => Token::Case,
             "of" => Token::Of,
             "data" => Token::Data,
+            "interface" => Token::Interface,
+            "implementation" => Token::Implementation,
+            "record" => Token::Record,
+            "mutual" => Token::Mutual,
+            "where" => Token::Where,
+            "do" => Token::Do,
+            "module" => Token::Module,
+            "import" => Token::Import,
             "xor" => Token::Xor,
             "shiftL" => Token::ShiftL,
             "shiftR" => Token::ShiftR,
@@ -197,16 +269,32 @@ impl<'a> Scanner<'a> {
 
     fn number(&mut self, first: char) {
         let mut text = String::from(first);
+        let mut is_float = false;
         while let Some(&c) = self.cursor.peek() {
             if c.is_digit(10) {
                 text.push(c);
                 self.advance();
+            } else if c == '.' {
+                if let Some(next) = self.cursor.peek_next() {
+                    if next.is_digit(10) {
+                        is_float = true;
+                        text.push(c);
+                        self.advance();
+                        continue;
+                    }
+                }
+                break;
             } else {
                 break;
             }
         }
         let len = text.len();
-        let value = text.parse::<i64>().unwrap_or(0);
-        self.add_token(Token::Integer(value), len);
+        if is_float {
+            let val = text.parse::<f64>().unwrap_or(0.0);
+            self.add_token(Token::Float(val.to_bits()), len);
+        } else {
+            let value = text.parse::<i64>().unwrap_or(0);
+            self.add_token(Token::Integer(value), len);
+        }
     }
 }
