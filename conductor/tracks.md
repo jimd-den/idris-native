@@ -9,5 +9,5 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 ---
 
-- [ ] **Track: Robust LLVM Backend: ADT Lowering, Pattern Matching & Identifier Sanitization**
+- [x] **Track: Robust LLVM Backend: ADT Lowering, Pattern Matching & Identifier Sanitization**
 *Link: [./tracks/robust_backend_20260318/](./tracks/robust_backend_20260318/)*
