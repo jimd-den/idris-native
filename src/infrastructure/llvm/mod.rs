@@ -88,6 +88,8 @@ impl LlvmBackend {
 declare i32 @puts(i8*)
 declare i8* @malloc(i64)
 declare void @free(i8*)
+declare i64 @strlen(i8*)
+declare i8* @memcpy(i8*, i8*, i64)
 
 @str_buffer = global [1024 x i8] zeroinitializer
 
@@ -111,8 +113,28 @@ define void @putStrLn(i64 %s_int) {
 }
 
 define i64 @concat(i64 %s1_int, i64 %s2_int) {
-  ; Dummy concat: just return the first string for now
-  ret i64 %s1_int
+entry:
+  %s1 = inttoptr i64 %s1_int to i8*
+  %s2 = inttoptr i64 %s2_int to i8*
+  %len1 = call i64 @strlen(i8* %s1)
+  %len2 = call i64 @strlen(i8* %s2)
+  %total_len = add i64 %len1, %len2
+  %alloc_len = add i64 %total_len, 1
+  %new_str = call i8* @malloc(i64 %alloc_len)
+  
+  ; Copy first string
+  %void1 = call i8* @memcpy(i8* %new_str, i8* %s1, i64 %len1)
+  
+  ; Copy second string
+  %dest2 = getelementptr i8, i8* %new_str, i64 %len1
+  %void2 = call i8* @memcpy(i8* %dest2, i8* %s2, i64 %len2)
+  
+  ; Null terminator
+  %term_ptr = getelementptr i8, i8* %new_str, i64 %total_len
+  store i8 0, i8* %term_ptr
+  
+  %res = ptrtoint i8* %new_str to i64
+  ret i64 %res
 }
 
 define void @print_int(i64 %n) {
@@ -192,13 +214,68 @@ impl Backend for LlvmBackend {
         let mut builder = IRBuilder::new();
         let env = HashMap::new();
         
+        // Pre-pass: register all ADTs (including nested ones)
+        fn register_adts<'a>(decls: &[Term<'a>], builder: &mut IRBuilder) {
+            for decl in decls {
+                match decl {
+                    Term::Data(_, _, _) => { builder.lower_term(decl, &HashMap::new()); }
+                    Term::Where(_, local_decls) => { register_adts(local_decls, builder); }
+                    Term::Def(_, _, body) => { register_adts_in_term(body, builder); }
+                    _ => {}
+                }
+            }
+        }
+
+        fn register_adts_in_term<'a>(term: &Term<'a>, builder: &mut IRBuilder) {
+            match term {
+                Term::Where(body, local_decls) => {
+                    register_adts(local_decls, builder);
+                    register_adts_in_term(body, builder);
+                }
+                Term::Let(_, val, body) => {
+                    register_adts_in_term(val, builder);
+                    register_adts_in_term(body, builder);
+                }
+                Term::LetRec(_, val, body) => {
+                    register_adts_in_term(val, builder);
+                    register_adts_in_term(body, builder);
+                }
+                Term::Case(target, branches) => {
+                    register_adts_in_term(target, builder);
+                    for (_, _, body) in branches {
+                        register_adts_in_term(body, builder);
+                    }
+                }
+                Term::App(f, a) => {
+                    register_adts_in_term(f, builder);
+                    register_adts_in_term(a, builder);
+                }
+                Term::Lambda(_, _, body) => {
+                    register_adts_in_term(body, builder);
+                }
+                Term::Do(stmts) => {
+                    for stmt in stmts {
+                        register_adts_in_term(stmt, builder);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        register_adts(declarations, &mut builder);
+
         let mut main_name = "main".to_string();
         let mut main_args_count = 0;
+        let mut main_defined = false;
 
         for decl in declarations {
             if let Term::Def(name, args, _) = decl {
                 builder.lower_term(decl, &env);
-                if name == "main" || main_args_count == 0 {
+                if name == "main" {
+                    main_name = name.clone();
+                    main_args_count = args.len();
+                    main_defined = true;
+                } else if !main_defined && main_args_count == 0 {
                     main_name = name.clone();
                     main_args_count = args.len();
                 }
@@ -212,31 +289,35 @@ impl Backend for LlvmBackend {
         
         // Define string literals
         for (value, label) in &builder.string_literals {
+            let escaped = builder.escape_string(value);
             ir.push_str(&format!("@{} = private unnamed_addr constant [{} x i8] c\"{}\\00\", align 1\n", 
-                label, value.len() + 1, value));
+                label, value.len() + 1, escaped));
         }
 
         ir.push_str(&self.get_runtime_ir());
-        
-        for def in &builder.function_definitions {
+
+        for def in builder.function_definitions.values() {
             ir.push_str(def);
-            ir.push('\n');
+            ir.push_str("\n");
         }
 
-        // Add a main wrapper for the MVP to make it executable
-        ir.push_str("\ndefine i32 @main() {\n");
-        let mut call_args = String::new();
-        for _ in 0..main_args_count {
-            if !call_args.is_empty() { call_args.push_str(", "); }
-            call_args.push_str("i64 2");
+
+        // Add a main wrapper for the MVP to make it executable if main is not defined
+        if !main_defined {
+            ir.push_str("\ndefine i32 @main() {\n");
+            let mut call_args = String::new();
+            for _ in 0..main_args_count {
+                if !call_args.is_empty() { call_args.push_str(", "); }
+                call_args.push_str("i64 2");
+            }
+            ir.push_str("  %res = call i64 @");
+            ir.push_str(&builder.sanitize_id(&main_name));
+            ir.push_str("(");
+            ir.push_str(&call_args);
+            ir.push_str(")\n");
+            ir.push_str("  call void @print_int(i64 %res)\n");
+            ir.push_str("  ret i32 0\n}\n");
         }
-        ir.push_str("  %res = call i64 @");
-        ir.push_str(&main_name);
-        ir.push_str("(");
-        ir.push_str(&call_args);
-        ir.push_str(")\n");
-        ir.push_str("  call void @print_int(i64 %res)\n");
-        ir.push_str("  ret i32 0\n}\n");
 
         ir
     }
@@ -256,6 +337,10 @@ mod tests {
     pub mod dynamic_main_tests;
     pub mod wasm_tests;
     pub mod bare_metal_tests;
+    pub mod sanitizer_tests;
+    pub mod string_literal_tests;
+    pub mod adt_tests;
+    pub mod pattern_matching_tests;
 }
 
 #[cfg(feature = "broken_tests")]

@@ -174,8 +174,8 @@ fn test_lower_case_expression() {
         
         builder.lower_term(case_term, &env);
         
-        // We expect comparison, branches, and a phi node
-        assert!(builder.instructions.iter().any(|instr| instr.contains("icmp eq")));
+        // We expect switch, branches, and a phi node
+        assert!(builder.instructions.iter().any(|instr| instr.contains("switch i64")));
         assert!(builder.instructions.iter().any(|instr| instr.contains("phi i64")));
     }
 }

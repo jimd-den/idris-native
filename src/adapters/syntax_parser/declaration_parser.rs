@@ -572,17 +572,32 @@ impl<'a, 'arena> Parser<'a, 'arena> {
 
         if self.peek() == &Token::Assign {
             self.consume(Token::Assign, "Expected = in definition")?;
-            let body = self.parse_expr()?;
+            let mut body = self.parse_expr()?;
 
             // Check for `where` clause after the body
             self.skip_newlines();
             if self.peek() == &Token::Where {
                 self.advance();
-                self.skip_indented_block();
+                let mut local_decls = Vec::new();
+                // Simple version: parse a single declaration for now
+                // Real version needs to parse indented block
+                self.skip_newlines();
+                while self.peek() != &Token::Newline && self.peek() != &Token::EOF && self.peek() != &Token::RParen {
+                    if let Ok(decl) = self.parse_declaration() {
+                        local_decls.push(decl);
+                    } else {
+                        break;
+                    }
+                    self.skip_newlines();
+                }
+                if !local_decls.is_empty() {
+                    body = unsafe { &*self.arena.alloc(Term::Where(body, local_decls)) };
+                }
             }
 
             Ok(Term::Def(name, args, body))
-        } else {
+        }
+ else {
             // No `=` found — skip to next line
             while self.peek() != &Token::Newline && self.peek() != &Token::EOF {
                 self.advance();

@@ -6,28 +6,91 @@
 use crate::domain::Term;
 use std::collections::HashMap;
 
+/// Represents the layout of a constructor in memory.
+#[derive(Debug, Clone)]
+pub struct ConstructorLayout {
+    pub tag: u32,
+    pub field_count: usize,
+}
+
 /// The IRBuilder translates our `Term` AST directly into LLVM IR.
 pub struct IRBuilder {
     pub instructions: Vec<String>,
-    pub function_definitions: Vec<String>,
+    pub function_definitions: std::collections::HashMap<String, String>,
     pub string_literals: std::collections::HashMap<String, String>,
+    pub type_env: std::collections::HashMap<String, ConstructorLayout>,
     next_reg: usize,
     label_counter: usize,
     fn_counter: usize,
+    pat_counter: usize,
     bit_width: u32,
 }
 
 impl IRBuilder {
     pub fn new() -> Self {
+        let mut type_env = std::collections::HashMap::new();
+        // Built-in List constructors
+        type_env.insert("Nil".to_string(), ConstructorLayout { tag: 0, field_count: 0 });
+        type_env.insert("::".to_string(), ConstructorLayout { tag: 1, field_count: 2 });
+        // Built-in Nat constructors
+        type_env.insert("Z".to_string(), ConstructorLayout { tag: 0, field_count: 0 });
+        type_env.insert("S".to_string(), ConstructorLayout { tag: 1, field_count: 1 });
+        
         Self {
             instructions: Vec::new(),
-            function_definitions: Vec::new(),
+            function_definitions: std::collections::HashMap::new(),
             string_literals: std::collections::HashMap::new(),
+            type_env,
             next_reg: 1,
             label_counter: 0,
             fn_counter: 0,
+            pat_counter: 0,
             bit_width: 64,
         }
+    }
+
+    /// Generates a unique placeholder name for pattern matching.
+    pub fn new_placeholder(&mut self) -> String {
+        self.pat_counter += 1;
+        format!("_pat_{}", self.pat_counter)
+    }
+
+    /// Sanitizes an Idris identifier for LLVM, escaping special characters
+    /// and wrapping it in quotes to prevent collisions.
+    pub fn sanitize_id(&self, id: &str) -> String {
+        let mut sanitized = String::new();
+        let mut input = id;
+        
+        // Handle holes
+        if id.starts_with('?') {
+            sanitized.push_str("_hole_");
+            input = &id[1..];
+        }
+
+        for c in input.chars() {
+            match c {
+                '.' | '-' | ' ' | '(' | ')' | '[' | ']' | ',' | '?' => sanitized.push('_'),
+                _ => sanitized.push(c),
+            }
+        }
+
+        format!("\"{}\"", sanitized)
+    }
+
+    /// Escapes a string for LLVM IR string literals (hexadecimal escaping).
+    pub fn escape_string(&self, s: &str) -> String {
+        let mut escaped = String::new();
+        for b in s.as_bytes() {
+            match b {
+                b'\"' => escaped.push_str("\\22"),
+                b'\\' => escaped.push_str("\\5C"),
+                b if *b < 32 || *b > 126 => {
+                    escaped.push_str(&format!("\\{:02X}", b));
+                }
+                _ => escaped.push(*b as char),
+            }
+        }
+        escaped
     }
 
     /// Sets the default bit width for integer operations.
@@ -73,6 +136,22 @@ impl IRBuilder {
                 if name == "putStr" || name == "putStrLn" || name == "getLine" || name == "print_int" {
                     let mut s = String::from("@");
                     s.push_str(name);
+                    return s;
+                }
+                if let Some(layout) = self.type_env.get(name) {
+                    if layout.field_count == 0 {
+                        return layout.tag.to_string();
+                    } else {
+                        // For constructors with fields, we need a global reference
+                        // so that Term::App can call it if it's treated as a function.
+                        let mut s = String::from("@");
+                        s.push_str(&self.sanitize_id(name));
+                        return s;
+                    }
+                }
+                if self.function_definitions.contains_key(&self.sanitize_id(name)) {
+                    let mut s = String::from("@");
+                    s.push_str(&self.sanitize_id(name));
                     return s;
                 }
                 env.get(name).cloned().unwrap_or_else(|| {
@@ -258,7 +337,7 @@ impl IRBuilder {
                 }
                 fn_def.push_str("  ret "); fn_def.push_str(&ty); fn_def.push_str(" ");
                 fn_def.push_str(&res_reg); fn_def.push_str("\n}\n");
-                self.function_definitions.push(fn_def);
+                self.function_definitions.insert(fn_name.clone(), fn_def);
                 
                 let res = self.new_reg();
                 let mut ptrtoint = String::from("  ");
@@ -315,43 +394,107 @@ impl IRBuilder {
             }
             
             Term::Case(target, branches) => {
-                let val = self.lower_term(target, env);
+                let mut target_val = self.lower_term(target, env);
                 if branches.is_empty() { return String::from("0"); }
 
-                let mut labels = Vec::new();
-                let mut vals = Vec::new();
-
-                for (pat, _, body) in branches {
-                    if pat != "_" {
-                        let cmp = self.new_reg();
-                        self.instructions.push(format!("  {} = icmp eq {} {}, {}\n", cmp, ty, val, pat));
-                        let match_label = self.new_label("case_match");
-                        let next_label = self.new_label("case_next");
-                        self.instructions.push(format!("  br i1 {}, label %{}, label %{}\n", cmp, match_label, next_label));
-                        
-                        self.instructions.push(format!("{}:\n", match_label));
-                        let branch_val = self.lower_term(body, env);
-                        self.instructions.push("  br label %case_merge\n".to_string());
-                        
-                        labels.push(match_label);
-                        vals.push(branch_val);
-                        self.instructions.push(format!("{}:\n", next_label));
-                    } else {
-                        let branch_val = self.lower_term(body, env);
-                        self.instructions.push("  br label %case_merge\n".to_string());
-                        labels.push("wildcard".to_string());
-                        vals.push(branch_val);
+                // Check if any branch is a constructor match
+                let mut is_adt_match = false;
+                for (pat, _, _) in branches {
+                    if self.type_env.contains_key(pat) {
+                        is_adt_match = true;
+                        break;
                     }
                 }
 
-                self.instructions.push("case_merge:\n".to_string());
-                let phi_res = self.new_reg();
-                if vals.len() >= 2 {
-                    self.instructions.push(format!("  {} = phi {} [ {}, %{} ], [ {}, %{} ]\n", phi_res, ty, vals[0], labels[0], vals[1], labels[1]));
-                } else {
-                    self.instructions.push(format!("  {} = phi {} [ {}, %{} ]\n", phi_res, ty, vals.get(0).unwrap_or(&String::from("0")), labels.get(0).unwrap_or(&String::from("somewhere"))));
+                let mut val = target_val.clone();
+                let mut struct_ptr = String::new();
+                let generic_struct = "{ i64, [0 x i64] }";
+
+                if is_adt_match {
+                    // target_val is currently a i64 (pointer cast to int)
+                    // We need to: 
+                    // 1. cast back to pointer
+                    // 2. load tag from index 0
+                    let ptr = self.new_reg();
+                    self.instructions.push(format!("  {} = inttoptr {} {} to {}*\n", ptr, ty, target_val, generic_struct));
+                    struct_ptr = ptr;
+                    let tag_ptr = self.new_reg();
+                    self.instructions.push(format!("  {} = getelementptr {}, {}* {}, i32 0, i32 0\n", tag_ptr, generic_struct, generic_struct, struct_ptr));
+                    let tag_val = self.new_reg();
+                    self.instructions.push(format!("  {} = load i64, i64* {}\n", tag_val, tag_ptr));
+                    val = tag_val;
                 }
-                phi_res
+
+                let merge_label = self.new_label("case_merge");
+                let mut default_label = merge_label.clone();
+                let mut branch_labels = Vec::new();
+                let mut cases = Vec::new();
+
+                // 1. Identify default and generate labels
+                for (pat, _, _) in branches {
+                    let label = self.new_label("case_branch");
+                    branch_labels.push(label.clone());
+                    if pat == "_" {
+                        default_label = label;
+                    } else {
+                        // If ADT match, pat is the constructor name, use its tag
+                        let case_val = if is_adt_match {
+                            self.type_env.get(pat).map(|l| l.tag.to_string()).unwrap_or_else(|| pat.clone())
+                        } else {
+                            pat.clone()
+                        };
+                        cases.push((case_val, label));
+                    }
+                }
+
+                // 2. Emit switch instruction
+                let mut switch_instr = format!("  switch {} {}, label %{} [\n", ty, val, default_label);
+                for (pat, label) in &cases {
+                    switch_instr.push_str(&format!("    {} {}, label %{}\n", ty, pat, label));
+                }
+                switch_instr.push_str("  ]\n");
+                self.instructions.push(switch_instr);
+
+                // 3. Lower each branch
+                let mut phi_entries = Vec::new();
+                for (i, (pat, args, body)) in branches.iter().enumerate() {
+                    let label = &branch_labels[i];
+                    self.instructions.push(format!("{}:\n", label));
+                    
+                    let mut branch_env = env.clone();
+                    if is_adt_match && pat != "_" {
+                        // Extract fields and bind to args
+                        if let Some(layout) = self.type_env.get(pat).cloned() {
+                            // LLVM GEP on generic {i64, [0 x i64]} works if we use the right indices
+                            for (j, arg_name) in args.iter().enumerate() {
+                                if j < layout.field_count {
+                                    let field_ptr = self.new_reg();
+                                    self.instructions.push(format!("  {} = getelementptr {}, {}* {}, i32 0, i32 1, i32 {}\n", 
+                                        field_ptr, generic_struct, generic_struct, struct_ptr, j));
+                                    let field_val = self.new_reg();
+                                    self.instructions.push(format!("  {} = load i64, i64* {}\n", field_val, field_ptr));
+                                    branch_env.insert(arg_name.clone(), field_val);
+                                }
+                            }
+                        }
+                    }
+                    
+                    let branch_val = self.lower_term(body, &branch_env);
+                    phi_entries.push((branch_val, label.clone()));
+                    self.instructions.push(format!("  br label %{}\n", merge_label));
+                }
+
+                // 4. Merge
+                self.instructions.push(format!("{}:\n", merge_label));
+                let res = self.new_reg();
+                let mut phi_instr = format!("  {} = phi {} ", res, ty);
+                for (i, (val, label)) in phi_entries.iter().enumerate() {
+                    if i > 0 { phi_instr.push_str(", "); }
+                    phi_instr.push_str(&format!("[ {}, %{} ]", val, label));
+                }
+                phi_instr.push('\n');
+                self.instructions.push(phi_instr);
+                res
             }
 
             Term::Do(stmts) => {
@@ -397,34 +540,91 @@ impl IRBuilder {
                 let mut inner_env = env.clone();
                 for arg in args {
                     if !arg_str.is_empty() { arg_str.push_str(", "); }
-                    arg_str.push_str(&ty); arg_str.push_str(" %"); arg_str.push_str(arg);
+                    let sanitized_arg = self.sanitize_id(arg);
+                    arg_str.push_str(&ty); arg_str.push_str(" %"); arg_str.push_str(&sanitized_arg.replace("\"", ""));
                     let mut val_name = String::from("%");
-                    val_name.push_str(arg);
+                    val_name.push_str(&sanitized_arg.replace("\"", ""));
                     inner_env.insert(arg.clone(), val_name);
                 }
                 
                 let res_reg = self.lower_term(body, &inner_env);
                 let mut fn_def = String::from("define ");
-                fn_def.push_str(&ty); fn_def.push_str(" @"); fn_def.push_str(name);
+                fn_def.push_str(&ty); fn_def.push_str(" @"); fn_def.push_str(&self.sanitize_id(name));
                 fn_def.push_str("("); fn_def.push_str(&arg_str); fn_def.push_str(") {\n");
                 for instr in self.instructions.drain(..) {
                     fn_def.push_str(&instr);
                 }
                 fn_def.push_str("  ret "); fn_def.push_str(&ty); fn_def.push_str(" ");
                 fn_def.push_str(&res_reg); fn_def.push_str("\n}\n");
-                self.function_definitions.push(fn_def);
+                
+                self.function_definitions.entry(self.sanitize_id(name)).or_insert(fn_def);
                 String::from("void")
             }
             
-            Term::Module(_) | Term::Import(_) | Term::Data(_, _, _) | Term::Interface(_, _, _) |
+            Term::Module(_) | Term::Import(_) | Term::Interface(_, _, _) |
             Term::Implementation(_, _, _) | Term::Record(_, _) | Term::Mutual(_) => {
                 "void".to_string()
             }
             
-            Term::Where(t, defs) => {
-                for def in defs {
-                    self.lower_term(def, env);
+            Term::Data(_name, _params, constructors) => {
+                for (i, con) in constructors.iter().enumerate() {
+                    self.type_env.insert(con.name.clone(), ConstructorLayout {
+                        tag: i as u32,
+                        field_count: con.fields.len(),
+                    });
+
+                    if con.fields.len() > 0 {
+                        // Generate a global constructor function
+                        let mut arg_str = String::new();
+                        for j in 0..con.fields.len() {
+                            if !arg_str.is_empty() { arg_str.push_str(", "); }
+                            arg_str.push_str(&format!("{} %f{}", ty, j));
+                        }
+                        
+                        let mut con_def = format!("define {} @{}({}) {{\n", ty, self.sanitize_id(&con.name), arg_str);
+                        let struct_ty = format!("{{ i64, [{0} x i64] }}", con.fields.len());
+                        
+                        // Use a temporary IR builder for the constructor body to avoid polluting current instructions
+                        let ptr = "%1"; // First register in new function
+                        con_def.push_str(&format!("  {} = alloca {}\n", ptr, struct_ty));
+                        
+                        let tag_ptr = "%2";
+                        con_def.push_str(&format!("  {} = getelementptr {}, {}* {}, i32 0, i32 0\n", tag_ptr, struct_ty, struct_ty, ptr));
+                        con_def.push_str(&format!("  store i64 {}, i64* {}\n", i, tag_ptr));
+                        
+                        let mut next_reg = 3;
+                        for j in 0..con.fields.len() {
+                            let field_ptr = format!("%{}", next_reg);
+                            con_def.push_str(&format!("  {} = getelementptr {}, {}* {}, i32 0, i32 1, i32 {}\n", field_ptr, struct_ty, struct_ty, ptr, j));
+                            con_def.push_str(&format!("  store i64 %f{}, i64* {}\n", j, field_ptr));
+                            next_reg += 1;
+                        }
+                        
+                        let res = format!("%{}", next_reg);
+                        con_def.push_str(&format!("  {} = ptrtoint {}* {} to i64\n", res, struct_ty, ptr));
+                        con_def.push_str(&format!("  ret i64 {}\n}}\n", res));
+                        
+                        self.function_definitions.insert(self.sanitize_id(&con.name), con_def);
+                    }
                 }
+                "void".to_string()
+            }
+            
+            Term::Where(t, defs) => {
+                // Lower local definitions first to register them in function_definitions HashMap
+                for def in defs {
+                    match def {
+                        Term::Def(_, _, _) | Term::Data(_, _, _) => {
+                            self.lower_term(def, env);
+                        }
+                        Term::Where(_, nested_defs) => {
+                            // Recursively register definitions in nested where blocks
+                            self.lower_term(def, env);
+                        }
+                        _ => { self.lower_term(def, env); }
+                    }
+                }
+                // Finally lower the body
                 self.lower_term(t, env)
             }
 

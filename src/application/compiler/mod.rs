@@ -104,4 +104,5 @@ mod tests {
     pub mod string_input_tests;
     pub mod buffer_lowering_tests;
     pub mod sha256_lowering_tests;
+    pub mod string_concat_tests;
 }

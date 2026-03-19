@@ -1,41 +1,33 @@
-# Phase Summary: Idris Native Compiler Evolution
+# Phase 1 Summary: Identifier Sanitization & Unique Naming
 
-## Functional Core & Turing Completeness
-- **Extended `Term` AST**: Added `Add`, `Sub`, `Eq`, `If`, and `LetRec` primitives to support complex logic and recursion.
-- **Implemented `Evaluator`**: Created a functional evaluator for term reduction and substitution.
-- **Ackermann Proof**: Verified Turing completeness by compiling and executing the Ackermann function end-to-end.
+## Task: Implement Identifier Sanitizer
+- **Description:** Created a `sanitize_id` helper in `IRBuilder` that escapes special characters (e.g., `?` -> `_hole_`, `.` -> `_`) and wraps all Idris identifiers in LLVM-quoted format (`"..."`).
+- **Why:** This prevents LLVM assembly errors when Idris names contain characters like dots or question marks, and ensures no collisions with LLVM reserved keywords.
 
-## Executable Generation & Toolchain Integration
-- **LLVM Module Assembly**: Implemented `Module` structure to aggregate IR declarations and definitions.
-- **Strictly Zero-C Runtime**: Achieved a pure LLVM output using system calls (`write` syscall 1) for I/O, completely removing `libc` dependencies.
-- **Toolchain Orchestration**: Integrated `clang` into the `cli_driver` for automated native binary compilation.
+## Task: Unique Placeholder Generation
+- **Description:** Added a `pat_counter` to `IRBuilder` and implemented a `new_placeholder` method that generates unique names like `_pat_1`, `_pat_2`.
+- **Why:** This prevents LLVM redefinition errors when multiple pattern-matching placeholders are used within the same scope.
 
-## SHA-256 Primitives & Official Idris 2 Syntax
-- **Word Types & Bitwise Ops**: Added `i32`, `i8`, and bitwise operators (`xor`, `.&.`, `.|.`, `shiftL`, `shiftR`, `complement`) to the AST and `IRBuilder`.
-- **Buffer Primitives**: Implemented fixed-size `Buffer` with `setBits64` and `getBits64` for zero-GC memory manipulation.
-- **Mandatory QTT Enforcement**: 
-    - Implemented real multiplicity tracking (0, 1, Unrestricted) in `QttChecker`.
-    - Integrated the checker into the compiler pipeline to halt on multiplicity or boundary violations.
-- **Official Syntax Support**:
-    - Aligned `Lexer` and `Parser` with Idris 2 standard (backticks for infix, `->`, `:`, etc.).
-    - Implemented type signature parsing (`parse_signature`, `parse_pi`).
-    - Added `Let` bindings support.
+## Task: Robust Global String Literals
+- **Description:** Implemented `escape_string` in `IRBuilder` for LLVM-compatible hexadecimal escaping. Refined `string_literals` tracking to ensure deduplication and correct global definition emission in the backend.
+- **Why:** LLVM IR requires non-printable characters and quotes to be escaped in string literals using a specific `\XX` hex format. Global strings must also be unique and shared across the module to save space and prevent symbol collisions.
 
-## Phase 4: Full Idris 2 Language & Error Pipeline
-- **Extended AST & Language Support**: 
-    - Added AST nodes and parsing for `Module`, `Import`, `Data`, `Interface`, `Implementation`, `Record`, `Mutual`, `Where`, `Do`, and `Bind`.
-    - Expanded literal support to include `String`, `Float`, and `Char`.
-    - Supported qualified identifiers (dots in names).
-- **Structured Error Reporting**:
-    - Replaced all `panic!` calls in the scanner and parser with a `Result`-based `CompilerError` pipeline.
-    - Implemented Idris 2 style diagnostic rendering with line numbers, carets, and hints.
-- **Reference Sample Compilation**:
-    - Successfully compiled official Idris 2 samples (`Prims.idr`, `io.idr`) using the new `--no-qtt` mode.
-    - Implemented target-aware IR generation for WASM and Bare-Metal targets.
-- **REPL Robustification**:
-    - Wired the REPL to use the actual `Evaluator` and `Parser`, moving away from mock string matching.
+## Task: Implement @concat and IO Stubs
+- **Description:** Replaced the dummy `@concat` stub with a functional implementation using `malloc`, `memcpy`, and `strlen`. Updated the backend to only emit the `main` wrapper when necessary.
+- **Why:** To support dynamic string concatenation (`++`) in compiled programs. The functional implementation ensures that new strings are correctly allocated and null-terminated.
 
-## Verification
-- Verified against official Idris 2 compiler using `ackermann_official.idr` and `sha256_official.idr`.
-- Robust test suite with 80+ automated tests covering entities, use cases, and integration.
-- Successfully compiled `idris2_ref/samples/` reference files.
+## Task: Implement ADT Registry
+- **Description:** Added a `type_env` to `IRBuilder` that stores `ConstructorLayout` (tag and field count) for each data constructor. Encountering `Term::Data` now populates this registry.
+- **Why:** This registry is essential for lowering constructors to LLVM structs and for implementing tag-based pattern matching in subsequent phases.
+
+## Task: Lower Constructors to Structs
+- **Description:** Updated `IRBuilder` to lower constructor calls (`Term::App` with a constructor name) to LLVM struct allocations (`alloca`). The struct layout consists of an `i64` tag and an array of `i64` fields. Nullary constructors are lowered directly to their integer tag.
+- **Why:** To represent Idris 2 data types in memory. Using LLVM structs allows for efficient storage and access of constructor data, enabling pattern matching.
+
+## Task: Refactor Case Lowering to switch
+- **Description:** Refactored `Term::Case` lowering to use the LLVM `switch` instruction instead of a chain of `icmp` and `br`. It correctly identifies the default branch (`_`) and generates unique labels for each case branch.
+- **Why:** The `switch` instruction is more idiomatic for multi-way branches in LLVM and allows for better optimization by the LLVM backend (e.g., jump tables).
+
+## Task: Implement Tag-Based Matching for ADTs
+- **Description:** Extended `Term::Case` to support ADTs. If a constructor name is detected in the patterns, the backend generates IR to extract the `i64` tag from the struct pointer and switches on that tag value. It also correctly extracts fields from the struct and binds them to local variables within each branch.
+- **Why:** This enables robust pattern matching on Idris 2 data types, allowing the compiler to correctly branch based on which constructor was used and access the data stored within those constructors.
