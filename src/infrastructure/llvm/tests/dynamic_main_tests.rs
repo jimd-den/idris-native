@@ -20,7 +20,12 @@ fn test_lower_program_with_no_args() {
     
     // A zero-arg fallback is safe to call when there is no explicit main.
     assert!(ir.contains("call i64 @\"no_args\"()"));
-    assert!(!ir.contains("call void @print_int"));
+    // The fallback @main should NOT call print_int directly;
+    // only the runtime's @print helper does that.
+    let main_fn = ir.split("define i32 @main()")
+        .nth(1)
+        .expect("Expected fallback @main in IR");
+    assert!(!main_fn.contains("call void @print_int"));
 }
 
 #[test]

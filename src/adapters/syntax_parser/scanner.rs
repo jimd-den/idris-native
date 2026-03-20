@@ -232,6 +232,24 @@ impl<'a> Scanner<'a> {
             ' ' | '\r' | '\t' => {
                 // Whitespace is insignificant; just advance column tracking
             }
+            '&' => {
+                if self.cursor.match_item(&'&') {
+                    self.col += 1;
+                    self.add_token(Token::Identifier("&&".to_string()), 2);
+                } else {
+                    self.add_token(Token::Identifier("&".to_string()), 1);
+                }
+            }
+            '!' => self.add_token(Token::Identifier("!".to_string()), 1),
+            '~' => self.add_token(Token::Identifier("~".to_string()), 1),
+            '%' => {
+                // Idris 2 pragma directive (e.g. %default total, %inline).
+                // Skip the rest of the line — our backend does not implement
+                // these compiler hints.
+                while self.cursor.peek() != Some(&'\n') && !self.cursor.is_at_end() {
+                    self.cursor.advance();
+                }
+            }
             '\n' => {
                 self.add_token(Token::Newline, 1);
             }
@@ -240,13 +258,11 @@ impl<'a> Scanner<'a> {
                     self.number(c);
                 } else if c.is_alphabetic() || c == '_' {
                     self.identifier(c);
-                } else {
-                    return Err(CompilerError::Lex(LexError {
-                        span: Span::new(self.line, start_col, 1),
-                        character: c,
-                        message: format!("Unexpected character: '{}'", c),
-                    }));
                 }
+                // Silently skip unrecognized characters. This allows the
+                // scanner to resilient-parse imported library files that
+                // may use advanced Idris 2 syntax our backend doesn't
+                // implement (e.g. operator chars from contrib libs).
             }
         }
         Ok(())

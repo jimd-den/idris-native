@@ -39,7 +39,7 @@ fn test_compiler_nested_where_capture() {
 
     let source = "d : Integer -> Integer\nd y = c (y + 1 + z y)\n      where c : Integer -> Integer\n            c x = 42 + x\n\n            z : Integer -> Integer\n            z w = y + w\n\nmain : Integer\nmain = print (d 2)";
 
-    let output_path = "test_output_nested_where";
+    let output_path = "./test_output_nested_where";
     let result = compiler.compile_str(source, output_path, "nested_where.idr");
     assert!(result.is_ok(), "Nested where with capture should compile");
 

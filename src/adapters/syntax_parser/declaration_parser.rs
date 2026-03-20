@@ -471,6 +471,7 @@ impl<'a, 'arena> Parser<'a, 'arena> {
     /// Wraps the result in `Term::Def(name, args, body)` for the AST.
     fn parse_definition_decl(&mut self) -> Result<Term<'a>, CompilerError> {
         let name_token = self.advance();
+        let def_col = name_token.span.col;
         let name = match name_token.node {
             Token::Identifier(n) => n,
             Token::Integer(i) => i.to_string(),
@@ -579,10 +580,27 @@ impl<'a, 'arena> Parser<'a, 'arena> {
             if self.peek() == &Token::Where {
                 self.advance();
                 let mut local_decls = Vec::new();
-                // Simple version: parse a single declaration for now
-                // Real version needs to parse indented block
                 self.skip_newlines();
-                while self.peek() != &Token::Newline && self.peek() != &Token::EOF && self.peek() != &Token::RParen {
+
+                // Parse where-clause local definitions.
+                //
+                // Indentation-based termination: where-clause declarations
+                // are indented past the parent definition's column (`def_col`).
+                // When we see an identifier at column <= def_col after
+                // newlines, it's a new top-level declaration and we stop.
+                while self.peek() != &Token::EOF && self.peek() != &Token::RParen {
+                    if self.peek() == &Token::Newline {
+                        self.skip_newlines();
+                        continue;
+                    }
+
+                    // Check if next token is back at top-level indentation
+                    if let Some(t) = self.cursor.peek_at(0) {
+                        if t.span.col <= def_col {
+                            break;
+                        }
+                    }
+
                     if let Ok(decl) = self.parse_declaration() {
                         local_decls.push(decl);
                     } else {

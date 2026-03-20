@@ -332,9 +332,23 @@ impl<'a, 'arena> Parser<'a, 'arena> {
     /// precedence than all binary operators. We greedily apply arguments
     /// as long as the next token looks like an argument (identifier, literal,
     /// or parenthesized expression) and is NOT the start of a new declaration.
+    ///
+    /// Multi-line applications (e.g., `If (arg1)\n   (arg2)\n   (arg3)`)
+    /// are valid inside parenthesized expressions. We skip newlines between
+    /// arguments when the next non-newline token is clearly an argument
+    /// (a literal or `(`), not a new declaration.
     pub fn parse_app(&mut self) -> Result<&'a Term<'a>, CompilerError> {
         let mut expr = self.parse_primary()?;
         loop {
+            // Skip newlines when the next non-whitespace token is an argument
+            // continuation (literal or paren), not a new declaration.
+            if self.peek() == &Token::Newline {
+                if self.peek_past_newlines_is_arg() {
+                    self.skip_newlines();
+                } else {
+                    break;
+                }
+            }
             match self.peek() {
                 Token::Identifier(_) => {
                     if let Some(next) = self.cursor.peek_at(1) {
@@ -354,6 +368,32 @@ impl<'a, 'arena> Parser<'a, 'arena> {
             }
         }
         Ok(expr)
+    }
+
+    /// Peeks past newline tokens to check if the next significant token
+    /// is an argument continuation (e.g., `(`, literal, or identifier
+    /// that isn't a new declaration).
+    ///
+    /// # Rationale (KISS)
+    /// Rather than tracking a full paren-depth counter across the parser,
+    /// we use a simple lookahead: if the first non-newline token after
+    /// a series of newlines is `(`, a literal, or a non-declaring identifier,
+    /// it's safe to continue application parsing across the line break.
+    fn peek_past_newlines_is_arg(&self) -> bool {
+        let mut idx = 0;
+        while let Some(t) = self.cursor.peek_at(idx) {
+            if t.node == Token::Newline {
+                idx += 1;
+                continue;
+            }
+            return matches!(
+                t.node,
+                Token::LParen | Token::LBracket | Token::LBrace |
+                Token::Integer(_) | Token::Float(_) | Token::String(_) | Token::Char(_) |
+                Token::Complement | Token::Question | Token::Backslash
+            );
+        }
+        false
     }
 
     /// Primary expressions: literals, identifiers, parenthesized expressions,

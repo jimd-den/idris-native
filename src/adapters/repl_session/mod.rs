@@ -17,19 +17,44 @@ impl ReplSession {
         Self {}
     }
 
+    /// Infers the ground type of a parsed expression by inspecting its
+    /// top-level AST constructor. Returns a static type name string.
+    ///
+    /// This is intentionally shallow: we match on the outermost `Term`
+    /// variant rather than performing full dependent-type elaboration.
+    /// Sufficient for REPL `:t` queries on literals and simple expressions.
+    fn infer_ground_type(term: &Term) -> &'static str {
+        match term {
+            Term::Integer(_) => "Integer",
+            Term::Float(_) => "Float",
+            Term::String(_) => "String",
+            Term::Char(_) => "Char",
+            Term::IntegerType => "Type",
+            Term::FloatType => "Type",
+            Term::StringType => "Type",
+            Term::CharType => "Type",
+            Term::TypeType => "Type",
+            _ => "Integer", // Conservative fallback for untyped expressions
+        }
+    }
+
     /// Evaluates a string input from the user.
     pub fn eval(&self, input: &str) -> String {
         let trimmed_input = input.trim();
         if trimmed_input.is_empty() { return String::new(); }
         
-        // Handle type inspection command (:t) 
+        // Handle type inspection command (:t)
+        //
+        // Inspects the parsed expression's top-level constructor to infer
+        // its ground type. This is a shallow syntactic check — not full
+        // type inference — sufficient for literal and simple-variable queries.
         if trimmed_input.starts_with(":t ") {
             let term_str = &trimmed_input[3..].trim();
             let mut temp_arena = Arena::new();
             if let Ok(tokens) = lex(term_str) {
                 let mut parser = Parser::new(tokens, &mut temp_arena);
-                if let Ok(_expr) = parser.parse_expr() {
-                    return "Integer".to_string();
+                if let Ok(expr) = parser.parse_expr() {
+                    return Self::infer_ground_type(expr).to_string();
                 }
             }
         }

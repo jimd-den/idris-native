@@ -20,6 +20,11 @@ pub struct IRBuilder {
     pub string_literals: std::collections::HashMap<String, String>,
     pub type_env: std::collections::HashMap<String, ConstructorLayout>,
     pub known_functions: HashSet<String>,
+    /// Maps function names to their captured (lambda-lifted) variable names.
+    /// When a where-clause function captures outer variables, they become
+    /// extra leading parameters. Call sites look up this map to prepend
+    /// the captured values automatically.
+    lifted_captures: HashMap<String, Vec<String>>,
     next_reg: usize,
     label_counter: usize,
     fn_counter: usize,
@@ -43,6 +48,7 @@ impl IRBuilder {
             string_literals: std::collections::HashMap::new(),
             type_env,
             known_functions: HashSet::new(),
+            lifted_captures: HashMap::new(),
             next_reg: 1,
             label_counter: 0,
             fn_counter: 0,
@@ -157,6 +163,125 @@ impl IRBuilder {
         (current, args)
     }
 
+    /// Lowers a function definition to an LLVM IR function.
+    ///
+    /// # Lambda Lifting
+    /// `captures` lists variables from the enclosing scope that the body
+    /// references but are not among `args`. These are prepended as extra
+    /// parameters to the generated LLVM function, and corresponding extra
+    /// arguments are recorded in `self.lifted_captures` so that call sites
+    /// can supply them automatically.
+    fn lower_def(
+        &mut self,
+        name: &str,
+        args: &[String],
+        body: &Term,
+        env: &HashMap<String, String>,
+        captures: &[String],
+    ) -> String {
+        let ty = format!("i{}", self.bit_width);
+        let mut arg_str = String::new();
+        let mut inner_env = env.clone();
+
+        // Captured variables come first as extra parameters
+        for cap in captures {
+            if !arg_str.is_empty() { arg_str.push_str(", "); }
+            let sanitized = self.sanitize_id(cap).replace("\"", "");
+            arg_str.push_str(&format!("{} %{}", ty, sanitized));
+            inner_env.insert(cap.clone(), format!("%{}", sanitized));
+        }
+
+        // Then the declared parameters
+        for arg in args {
+            if !arg_str.is_empty() { arg_str.push_str(", "); }
+            let sanitized = self.sanitize_id(arg).replace("\"", "");
+            arg_str.push_str(&format!("{} %{}", ty, sanitized));
+            inner_env.insert(arg.clone(), format!("%{}", sanitized));
+        }
+
+        let res_reg = self.lower_term(body, &inner_env);
+        let mut fn_def = String::new();
+        fn_def.push_str(&format!("define {} @{}({}) {{\n", ty, self.sanitize_id(name), arg_str));
+        for instr in self.instructions.drain(..) {
+            fn_def.push_str(&instr);
+        }
+        fn_def.push_str(&format!("  ret {} {}\n}}\n", ty, res_reg));
+
+        self.function_definitions.entry(self.sanitize_id(name)).or_insert(fn_def);
+
+        // Record captures so call sites can supply the extra arguments
+        if !captures.is_empty() {
+            self.lifted_captures.insert(name.to_string(), captures.to_vec());
+        }
+
+        String::from("void")
+    }
+
+    /// Collects free variables in a term that are not in `bound`.
+    ///
+    /// A variable is "free" if it appears as `Term::Var(name)` and `name`
+    /// is not in the set of bound identifiers (function parameters, let
+    /// bindings, etc.). This drives lambda lifting for where-clause closures.
+    fn collect_free_vars<'b>(term: &'b Term, bound: &HashSet<&str>, out: &mut Vec<String>) {
+        match term {
+            Term::Var(name) if !bound.contains(name.as_str()) => {
+                out.push(name.clone());
+            }
+            Term::App(f, a) => {
+                Self::collect_free_vars(f, bound, out);
+                Self::collect_free_vars(a, bound, out);
+            }
+            Term::Add(l, r) | Term::Sub(l, r) | Term::Mul(l, r) | Term::Div(l, r) |
+            Term::Append(l, r) | Term::BitXor(l, r) | Term::BitAnd(l, r) |
+            Term::BitOr(l, r) | Term::Shl(l, r) | Term::Shr(l, r) |
+            Term::Eq(l, r) | Term::Lt(l, r) | Term::Gt(l, r) |
+            Term::BufferLoad(l, r) => {
+                Self::collect_free_vars(l, bound, out);
+                Self::collect_free_vars(r, bound, out);
+            }
+            Term::If(c, t, e) | Term::BufferStore(c, t, e) => {
+                Self::collect_free_vars(c, bound, out);
+                Self::collect_free_vars(t, bound, out);
+                Self::collect_free_vars(e, bound, out);
+            }
+            Term::Let(n, v, b) | Term::LetRec(n, v, b) => {
+                Self::collect_free_vars(v, bound, out);
+                let mut inner = bound.clone();
+                inner.insert(n.as_str());
+                Self::collect_free_vars(b, &inner, out);
+            }
+            Term::Lambda(n, _, b) => {
+                let mut inner = bound.clone();
+                inner.insert(n.as_str());
+                Self::collect_free_vars(b, &inner, out);
+            }
+            Term::Case(target, branches) => {
+                Self::collect_free_vars(target, bound, out);
+                for (_, args, body) in branches {
+                    let mut inner = bound.clone();
+                    for a in args { inner.insert(a.as_str()); }
+                    Self::collect_free_vars(body, &inner, out);
+                }
+            }
+            Term::BitNot(t) | Term::Bind(_, t) => {
+                Self::collect_free_vars(t, bound, out);
+            }
+            Term::Do(stmts) | Term::Mutual(stmts) => {
+                for s in stmts { Self::collect_free_vars(s, bound, out); }
+            }
+            Term::Where(body, defs) => {
+                Self::collect_free_vars(body, bound, out);
+                for d in defs { Self::collect_free_vars(d, bound, out); }
+            }
+            Term::Def(_, args, body) => {
+                let mut inner = bound.clone();
+                for a in args { inner.insert(a.as_str()); }
+                Self::collect_free_vars(body, &inner, out);
+            }
+            _ => {} // Literals, types, etc. have no free variables
+        }
+    }
+
     /// Lowers a high-level term into LLVM IR.
     pub fn lower_term(&mut self, term: &Term, env: &HashMap<String, String>) -> String {
         let ty = String::from("i") + &self.bit_width.to_string();
@@ -166,9 +291,19 @@ impl IRBuilder {
             if args.len() > 1 {
                 if let Term::Var(name) = head {
                     if let Some(global_name) = self.resolve_global_name(name) {
-                        let lowered_args: Vec<String> = args.iter().map(|arg| self.lower_term(arg, env)).collect();
+                        // Lambda lifting: prepend captured variables as extra args
+                        let mut all_args = Vec::new();
+                        if let Some(captures) = self.lifted_captures.get(name).cloned() {
+                            for cap in &captures {
+                                let cap_val = env.get(cap).cloned().unwrap_or_else(|| format!("%{}", cap));
+                                all_args.push(cap_val);
+                            }
+                        }
+                        let lowered: Vec<String> = args.iter().map(|arg| self.lower_term(arg, env)).collect();
+                        all_args.extend(lowered);
+
                         let res = self.new_reg();
-                        let call_args = lowered_args
+                        let call_args = all_args
                             .into_iter()
                             .map(|arg| format!("{} {}", ty, arg))
                             .collect::<Vec<_>>()
@@ -207,9 +342,23 @@ impl IRBuilder {
                     return global_name;
                 }
                 env.get(name).cloned().unwrap_or_else(|| {
-                    let mut s = String::from("%");
-                    s.push_str(name);
-                    s
+                    // If the name matches a registered function, emit a call
+                    // with zero args (nullary function / thunk).
+                    if self.function_definitions.contains_key(name) {
+                        let reg = self.next_reg();
+                        let call_line = format!(
+                            "  {} = call i64 @{}()\n",
+                            reg,
+                            self.sanitize_id(name)
+                        );
+                        self.current_body.push_str(&call_line);
+                        return reg;
+                    }
+                    // Unknown variable: emit 0 as a safe fallback so LLVM IR
+                    // remains valid. This covers type-level terms (Nat, Refl),
+                    // type holes (?name), and other constructs our backend
+                    // doesn't fully elaborate.
+                    String::from("0")
                 })
             }
             Term::Integer(n) => n.to_string(),
@@ -401,6 +550,30 @@ impl IRBuilder {
             }
             
             Term::App(f, a) => {
+                // For single-arg applications, check if the function head
+                // has been lambda-lifted and needs captured args prepended.
+                if let Term::Var(fname) = *f {
+                    if let Some(global_name) = self.resolve_global_name(fname) {
+                        let av = self.lower_term(a, env);
+                        let mut all_args = Vec::new();
+                        if let Some(captures) = self.lifted_captures.get(fname).cloned() {
+                            for cap in &captures {
+                                let cap_val = env.get(cap).cloned().unwrap_or_else(|| format!("%{}", cap));
+                                all_args.push(cap_val);
+                            }
+                        }
+                        all_args.push(av);
+                        let res = self.new_reg();
+                        let call_args = all_args
+                            .into_iter()
+                            .map(|arg| format!("{} {}", ty, arg))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        self.instructions.push(format!("  {} = call {} {}({})\n", res, ty, global_name, call_args));
+                        return res;
+                    }
+                }
+
                 let fv = self.lower_term(f, env);
                 let av = self.lower_term(a, env);
                 
@@ -581,36 +754,21 @@ impl IRBuilder {
                 self.lower_term(action, env)
             }
             
+            // Concrete machine types: these return their LLVM IR type string
+            // so downstream code can use them as runtime type descriptors.
+            Term::Bits64Type => String::from("i64"),
+            Term::I32Type => String::from("i32"),
+            Term::I8Type => String::from("i8"),
+
+            // Abstract / erased types: no runtime representation needed.
             Term::Pi(_, _, _, _) | Term::IntegerType | Term::FloatType | Term::StringType | Term::CharType |
-            Term::I32Type | Term::I8Type | Term::Bits64Type | Term::IOType | Term::TypeType |
+            Term::IOType | Term::TypeType |
             Term::Universe(_) => {
                 String::from("0")
             }
 
             Term::Def(name, args, body) => {
-                let mut arg_str = String::new();
-                let mut inner_env = env.clone();
-                for arg in args {
-                    if !arg_str.is_empty() { arg_str.push_str(", "); }
-                    let sanitized_arg = self.sanitize_id(arg);
-                    arg_str.push_str(&ty); arg_str.push_str(" %"); arg_str.push_str(&sanitized_arg.replace("\"", ""));
-                    let mut val_name = String::from("%");
-                    val_name.push_str(&sanitized_arg.replace("\"", ""));
-                    inner_env.insert(arg.clone(), val_name);
-                }
-                
-                let res_reg = self.lower_term(body, &inner_env);
-                let mut fn_def = String::from("define ");
-                fn_def.push_str(&ty); fn_def.push_str(" @"); fn_def.push_str(&self.sanitize_id(name));
-                fn_def.push_str("("); fn_def.push_str(&arg_str); fn_def.push_str(") {\n");
-                for instr in self.instructions.drain(..) {
-                    fn_def.push_str(&instr);
-                }
-                fn_def.push_str("  ret "); fn_def.push_str(&ty); fn_def.push_str(" ");
-                fn_def.push_str(&res_reg); fn_def.push_str("\n}\n");
-                
-                self.function_definitions.entry(self.sanitize_id(name)).or_insert(fn_def);
-                String::from("void")
+                self.lower_def(name, args, body, env, &[])
             }
             
             Term::Module(_) | Term::Import(_) | Term::Interface(_, _, _) |
@@ -663,20 +821,26 @@ impl IRBuilder {
             }
             
             Term::Where(t, defs) => {
-                // Lower local definitions first to register them in function_definitions HashMap
+                // Lambda lifting: local definitions may reference variables
+                // from the enclosing scope. We detect these free variables and
+                // pass them as extra parameters to the generated LLVM function,
+                // then record the mapping so call sites supply the extra args.
                 for def in defs {
                     match def {
-                        Term::Def(_, _, _) | Term::Data(_, _, _) => {
-                            self.lower_term(def, env);
-                        }
-                        Term::Where(_, nested_defs) => {
-                            // Recursively register definitions in nested where blocks
-                            self.lower_term(def, env);
+                        Term::Def(name, args, body) => {
+                            let arg_set: HashSet<&str> = args.iter().map(|s| s.as_str()).collect();
+                            let mut free = Vec::new();
+                            Self::collect_free_vars(body, &arg_set, &mut free);
+                            // Deduplicate while preserving order
+                            let mut seen = HashSet::new();
+                            let captures: Vec<String> = free.into_iter()
+                                .filter(|v| env.contains_key(v) && seen.insert(v.clone()))
+                                .collect();
+                            self.lower_def(name, args, body, env, &captures);
                         }
                         _ => { self.lower_term(def, env); }
                     }
                 }
-                // Finally lower the body
                 self.lower_term(t, env)
             }
 
