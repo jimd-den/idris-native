@@ -18,16 +18,14 @@ mod tests {
         builder.lower_term(&maybe, &env);
         
         // Verify that the type environment is populated
-        // We'll need to expose some way to check this, or test via side effects
-        // For now, let's assume IRBuilder will have a type_env field
-        assert!(builder.type_env.contains_key("Nothing"));
-        assert!(builder.type_env.contains_key("Just"));
+        assert!(builder.type_registry.type_env.contains_key("Nothing"));
+        assert!(builder.type_registry.type_env.contains_key("Just"));
         
-        let nothing_layout = builder.type_env.get("Nothing").unwrap();
+        let nothing_layout = builder.type_registry.type_env.get("Nothing").unwrap();
         assert_eq!(nothing_layout.tag, 0);
         assert_eq!(nothing_layout.field_count, 0);
         
-        let just_layout = builder.type_env.get("Just").unwrap();
+        let just_layout = builder.type_registry.type_env.get("Just").unwrap();
         assert_eq!(just_layout.tag, 1);
         assert_eq!(just_layout.field_count, 1);
     }

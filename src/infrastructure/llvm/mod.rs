@@ -4,6 +4,9 @@
 
 pub mod ir_builder;
 pub mod toolchain;
+pub mod string_interner;
+pub mod type_registry;
+pub mod function_lifter;
 
 pub use ir_builder::IRBuilder;
 use crate::application::compiler::Backend;
@@ -224,7 +227,7 @@ impl Backend for LlvmBackend {
             for decl in decls {
                 match decl {
                     Term::Def(name, _, body) => {
-                        builder.known_functions.insert(name.clone());
+                        builder.type_registry.register_function(name.clone());
                         register_function_names_in_term(body, builder);
                     }
                     Term::Where(body, local_decls) => {
@@ -287,7 +290,12 @@ impl Backend for LlvmBackend {
         fn register_adts<'a>(decls: &[Term<'a>], builder: &mut IRBuilder) {
             for decl in decls {
                 match decl {
-                    Term::Data(_, _, _) => { builder.lower_term(decl, &HashMap::new()); }
+                    Term::Data(_, _, constructors) => { 
+                        for con in constructors {
+                            builder.type_registry.register_function(con.name.clone());
+                        }
+                        builder.lower_term(decl, &HashMap::new()); 
+                    }
                     Term::Where(_, local_decls) => { register_adts(local_decls, builder); }
                     Term::Def(_, _, body) => { register_adts_in_term(body, builder); }
                     _ => {}
@@ -353,7 +361,7 @@ impl Backend for LlvmBackend {
         ir.push_str("\"\n");
         
         // Define string literals
-        for (value, label) in &builder.string_literals {
+        for (value, label) in &builder.string_interner.string_literals {
             let escaped = builder.escape_string(value);
             ir.push_str(&format!("@{} = private unnamed_addr constant [{} x i8] c\"{}\\00\", align 1\n", 
                 label, value.len() + 1, escaped));
@@ -361,7 +369,7 @@ impl Backend for LlvmBackend {
 
         ir.push_str(&self.get_runtime_ir());
 
-        for def in builder.function_definitions.values() {
+        for def in builder.function_lifter.function_definitions.values() {
             ir.push_str(def);
             ir.push_str("\n");
         }
